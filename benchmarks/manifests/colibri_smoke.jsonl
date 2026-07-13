@@ -1,0 +1,3 @@
+{"id":"smoke-01","task":"smoke","ctx":"The capital of France is","choices":[" Paris"," Berlin"," Rome"],"gold":0}
+{"id":"smoke-02","task":"smoke","ctx":"2 + 2 =","choices":[" 4"," 5"," 7"],"gold":0}
+{"id":"smoke-03","task":"smoke","ctx":"The sun rises in the","choices":[" east"," west"," north"],"gold":0}

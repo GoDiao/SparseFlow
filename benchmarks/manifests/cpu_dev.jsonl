@@ -1,0 +1,12 @@
+{"id":"short-zh-01","group":"short","category":"qa","text":"请用一句话解释什么是稀疏专家模型。"}
+{"id":"short-zh-02","group":"short","category":"qa","text":"为什么 MoE 模型可以拥有很多总参数，却只在每个 token 激活少数参数？"}
+{"id":"short-en-01","group":"short","category":"qa","text":"Explain in one sentence why an LRU cache can improve expert streaming."}
+{"id":"short-en-02","group":"short","category":"qa","text":"What is the difference between model capacity and active parameters in an MoE model?"}
+{"id":"code-01","group":"diversity","category":"code","text":"Write a Python function that returns the first n Fibonacci numbers and include a short explanation."}
+{"id":"code-02","group":"diversity","category":"code","text":"Write a small C function that computes the sum of an integer array safely."}
+{"id":"math-01","group":"diversity","category":"math","text":"A cache has 80 percent hit rate. If a hit costs 2 milliseconds and a miss costs 42 milliseconds, what is the expected average latency? Show the calculation."}
+{"id":"math-02","group":"diversity","category":"math","text":"Explain the difference between bandwidth and latency using a simple numerical example."}
+{"id":"locality-01","group":"locality","category":"conversation","text":"We are designing a tiered-memory MoE runtime. Explain the main tradeoffs between RAM cache size, SSD reads, and token latency."}
+{"id":"locality-02","group":"locality","category":"conversation","text":"For the same tiered-memory MoE runtime, propose three measurements that would reveal whether expert locality exists."}
+{"id":"long-01","group":"diversity","category":"summary","text":"Summarize this design principle in a concise engineering note: dense weights, routers, norms, and shared experts are frequently accessed and should remain resident, while routed experts are selected by the router and may be loaded on demand from storage. Discuss why cache hit rate and disk bandwidth jointly determine decode latency."}
+{"id":"long-02","group":"diversity","category":"summary","text":"Write a short technical comparison of full resident inference, generic layer offload, and expert-aware streaming. Mention memory use, I/O behavior, warmup behavior, and the main correctness risks of each approach."}

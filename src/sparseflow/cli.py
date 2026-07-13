@@ -5,8 +5,19 @@ import json
 from typing import Any
 
 from .analyze import analyze_model
+from .benchmark import (
+    format_expert_benchmark,
+    generate_trace,
+    load_trace,
+    parse_capacities,
+    parse_layers,
+    run_expert_benchmark,
+)
 from .bytes import format_bytes
+from .loader import load_expert_raw
+from .locator import ExpertLocator
 from .plan import build_plan
+from .route_trace import capture_route_trace, write_route_trace
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,6 +35,45 @@ def main(argv: list[str] | None = None) -> int:
     plan_p.add_argument("--reserve", type=float, default=2.5, help="Page-cache/runtime reserve in decimal GB.")
     plan_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
 
+    for command, help_text in (
+        ("expert-stat", "Locate one fused expert without reading its payload."),
+        ("expert-load", "Read and checksum one expert's raw tensor slices."),
+    ):
+        expert_p = sub.add_parser(command, help=help_text)
+        expert_p.add_argument("model")
+        expert_p.add_argument("--layer", type=int, required=True)
+        expert_p.add_argument("--expert", type=int, required=True)
+        expert_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    bench_p = sub.add_parser(
+        "expert-bench",
+        help="Benchmark per-layer expert-cache hit rate and raw read overhead.",
+    )
+    bench_p.add_argument("model")
+    bench_p.add_argument("--capacities", default="1,2,4,8", help="LRU slots per layer, comma-separated.")
+    bench_p.add_argument("--layers", default="0", help="Layer list/ranges, e.g. 0 or 0-39.")
+    bench_p.add_argument("--tokens", type=int, default=4, help="Generated trace tokens when --trace is absent.")
+    bench_p.add_argument("--topk", type=int, default=8, help="Experts selected per layer in generated traces.")
+    bench_p.add_argument(
+        "--mode",
+        choices=("uniform", "locality"),
+        default="locality",
+        help="Generated trace distribution.",
+    )
+    bench_p.add_argument("--seed", type=int, default=1234)
+    bench_p.add_argument("--trace", help="JSON trace file; overrides generated trace options.")
+    bench_p.add_argument("--output", help="Write the machine-readable result JSON to this path.")
+    bench_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    route_p = sub.add_parser(
+        "route-trace",
+        help="Capture actual Qwen3.5 MoE router expert selections from generation.",
+    )
+    route_p.add_argument("model")
+    route_p.add_argument("--prompt", required=True)
+    route_p.add_argument("--max-new-tokens", type=int, default=8)
+    route_p.add_argument("--output", required=True)
+
     args = parser.parse_args(argv)
     try:
         if args.command == "inspect":
@@ -34,6 +84,48 @@ def main(argv: list[str] | None = None) -> int:
             result = build_plan(args.model, ram_gb=args.ram, ctx=args.ctx, reserve_gb=args.reserve)
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_plan(result))
             return 0 if not result["warnings"] else 1
+        if args.command == "expert-stat":
+            result = ExpertLocator(args.model).locate(args.layer, args.expert).as_dict()
+            print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_expert_stat(result))
+            return 0
+        if args.command == "expert-load":
+            result = load_expert_raw(args.model, args.layer, args.expert)
+            print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_expert_load(result))
+            return 0
+        if args.command == "expert-bench":
+            locator = ExpertLocator(args.model)
+            layers = parse_layers(args.layers, int(locator.config.text_config.get("num_hidden_layers", 0) or 0))
+            if args.trace:
+                trace = load_trace(args.trace)
+            else:
+                trace = generate_trace(
+                    layers,
+                    locator.num_experts,
+                    tokens=args.tokens,
+                    top_k=args.topk,
+                    mode=args.mode,
+                    seed=args.seed,
+                )
+            result = run_expert_benchmark(args.model, parse_capacities(args.capacities), trace)
+            encoded = json.dumps(result, indent=2, ensure_ascii=False)
+            if args.output:
+                from pathlib import Path
+
+                output = Path(args.output).expanduser()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(encoded + "\n", encoding="utf-8")
+            print(encoded if args.json else format_expert_benchmark(result, format_bytes))
+            return 0
+        if args.command == "route-trace":
+            result = capture_route_trace(args.model, args.prompt, args.max_new_tokens)
+            write_route_trace(args.output, result)
+            print(
+                f"SparseFlow route-trace: {args.output}\n"
+                f"requests      {len(result['requests'])}\n"
+                f"forward calls {result['workload']['forward_calls']}\n"
+                f"trace sha256   {result['trace_sha256']}"
+            )
+            return 0
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         parser.exit(2, f"sparseflow: error: {exc}\n")
     return 2
@@ -82,4 +174,38 @@ def _format_plan(result: dict[str, Any]) -> str:
     if result["warnings"]:
         lines.append("")
         lines.extend(f"warn        {warning}" for warning in result["warnings"])
+    return "\n".join(lines)
+
+
+def _format_expert_stat(result: dict[str, Any]) -> str:
+    lines = [
+        f"SparseFlow expert-stat: layer {result['layer']}, expert {result['expert_id']}",
+    ]
+    for part in result["parts"]:
+        lines.extend(
+            [
+                "",
+                f"{part['part']}",
+                f"  tensor       {part['tensor_name']}",
+                f"  shard        {part['shard']}",
+                f"  dtype        {part['dtype']}",
+                f"  tensor shape {tuple(part['tensor_shape'])}",
+                f"  expert shape {tuple(part['expert_shape'])}",
+                f"  file offset  {part['file_offset']}",
+                f"  bytes        {format_bytes(part['nbytes'])}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _format_expert_load(result: dict[str, Any]) -> str:
+    lines = [
+        f"SparseFlow expert-load: layer {result['layer']}, expert {result['expert_id']}",
+        f"bytes        {format_bytes(result['total_bytes'])}",
+        f"sha256       {result['sha256']}",
+    ]
+    for part in result["parts"]:
+        lines.append(
+            f"{part['part']:<15} {format_bytes(part['bytes_read']):>10}  {part['sha256']}"
+        )
     return "\n".join(lines)

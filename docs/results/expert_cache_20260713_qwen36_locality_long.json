@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "num_experts": 256
+  },
+  "trace": {
+    "requests": 512,
+    "layers": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "sha256": "ae2505b54e9558f38a42f174d6e162ba06c3a4e0d46440d89ea3b8e738ddfdc3"
+  },
+  "results": [
+    {
+      "capacity_per_layer": 0,
+      "requests": 512,
+      "hits": 0,
+      "misses": 512,
+      "hit_rate": 0.0,
+      "evictions": 0,
+      "loaded_bytes": 3221225472,
+      "cached_bytes": 0,
+      "cache_entries": 0,
+      "logical_bytes": 3221225472,
+      "process_read_bytes": 167714816,
+      "wall_time_ms": 1118.3025930004078,
+      "read_latency_mean_ms": 2.172140812554346,
+      "read_latency_p50_ms": 1.2353670008451445,
+      "read_latency_p95_ms": 6.750181999450433
+    },
+    {
+      "capacity_per_layer": 4,
+      "requests": 512,
+      "hits": 22,
+      "misses": 490,
+      "hit_rate": 0.04296875,
+      "evictions": 474,
+      "loaded_bytes": 3082813440,
+      "cached_bytes": 100663296,
+      "cache_entries": 16,
+      "logical_bytes": 3221225472,
+      "process_read_bytes": 0,
+      "wall_time_ms": 872.4152070008131,
+      "read_latency_mean_ms": 1.7652817509825787,
+      "read_latency_p50_ms": 1.7014799996104557,
+      "read_latency_p95_ms": 2.0571000004565576
+    },
+    {
+      "capacity_per_layer": 8,
+      "requests": 512,
+      "hits": 60,
+      "misses": 452,
+      "hit_rate": 0.1171875,
+      "evictions": 420,
+      "loaded_bytes": 2843738112,
+      "cached_bytes": 201326592,
+      "cache_entries": 32,
+      "logical_bytes": 3221225472,
+      "process_read_bytes": 0,
+      "wall_time_ms": 1165.368435000346,
+      "read_latency_mean_ms": 2.559630095131665,
+      "read_latency_p50_ms": 2.4454379999951925,
+      "read_latency_p95_ms": 4.094908999832114
+    },
+    {
+      "capacity_per_layer": 16,
+      "requests": 512,
+      "hits": 188,
+      "misses": 324,
+      "hit_rate": 0.3671875,
+      "evictions": 260,
+      "loaded_bytes": 2038431744,
+      "cached_bytes": 402653184,
+      "cache_entries": 64,
+      "logical_bytes": 3221225472,
+      "process_read_bytes": 0,
+      "wall_time_ms": 824.1781379983877,
+      "read_latency_mean_ms": 2.5264768364144805,
+      "read_latency_p50_ms": 1.9970869998360286,
+      "read_latency_p95_ms": 5.149072001586319
+    },
+    {
+      "capacity_per_layer": 32,
+      "requests": 512,
+      "hits": 384,
+      "misses": 128,
+      "hit_rate": 0.75,
+      "evictions": 0,
+      "loaded_bytes": 805306368,
+      "cached_bytes": 805306368,
+      "cache_entries": 128,
+      "logical_bytes": 3221225472,
+      "process_read_bytes": 0,
+      "wall_time_ms": 657.3497800000041,
+      "read_latency_mean_ms": 5.116022015485555,
+      "read_latency_p50_ms": 5.126019999806886,
+      "read_latency_p95_ms": 5.579517999649397
+    }
+  ]
+}

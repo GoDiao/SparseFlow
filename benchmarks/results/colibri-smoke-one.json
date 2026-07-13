@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "backend": "transformers_cpu_choice_score",
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "config_sha256": "93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99",
+    "index_sha256": "41b9356101ebf8e7519e150dc811f80c4226e727301fbb032b890f006ed0be83",
+    "config": {
+      "architectures": [
+        "Qwen3_5MoeForConditionalGeneration"
+      ],
+      "image_token_id": 248056,
+      "model_type": "qwen3_5_moe",
+      "text_config": {
+        "attention_bias": false,
+        "attention_dropout": 0.0,
+        "attn_output_gate": true,
+        "bos_token_id": 248044,
+        "dtype": "bfloat16",
+        "eos_token_id": 248044,
+        "full_attention_interval": 4,
+        "head_dim": 256,
+        "hidden_act": "silu",
+        "hidden_size": 2048,
+        "initializer_range": 0.02,
+        "layer_types": [
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention"
+        ],
+        "linear_conv_kernel_dim": 4,
+        "linear_key_head_dim": 128,
+        "linear_num_key_heads": 16,
+        "linear_num_value_heads": 32,
+        "linear_value_head_dim": 128,
+        "mamba_ssm_dtype": "float32",
+        "max_position_embeddings": 262144,
+        "model_type": "qwen3_5_moe_text",
+        "moe_intermediate_size": 512,
+        "mtp_num_hidden_layers": 1,
+        "mtp_use_dedicated_embeddings": false,
+        "num_attention_heads": 16,
+        "num_experts": 256,
+        "num_experts_per_tok": 8,
+        "num_hidden_layers": 40,
+        "num_key_value_heads": 2,
+        "output_router_logits": false,
+        "pad_token_id": null,
+        "partial_rotary_factor": 0.25,
+        "rms_norm_eps": 1e-06,
+        "rope_parameters": {
+          "mrope_interleaved": true,
+          "mrope_section": [
+            11,
+            11,
+            10
+          ],
+          "partial_rotary_factor": 0.25,
+          "rope_theta": 10000000,
+          "rope_type": "default"
+        },
+        "router_aux_loss_coef": 0.001,
+        "shared_expert_intermediate_size": 512,
+        "tie_word_embeddings": false,
+        "use_cache": true,
+        "vocab_size": 248320
+      },
+      "tie_word_embeddings": false,
+      "transformers_version": "4.57.1",
+      "video_token_id": 248057,
+      "vision_config": {
+        "deepstack_visual_indexes": [],
+        "depth": 27,
+        "hidden_act": "gelu_pytorch_tanh",
+        "hidden_size": 1152,
+        "in_channels": 3,
+        "initializer_range": 0.02,
+        "intermediate_size": 4304,
+        "model_type": "qwen3_5_moe",
+        "num_heads": 16,
+        "num_position_embeddings": 2304,
+        "out_hidden_size": 2048,
+        "patch_size": 16,
+        "spatial_merge_size": 2,
+        "temporal_patch_size": 2
+      },
+      "vision_end_token_id": 248054,
+      "vision_start_token_id": 248053
+    }
+  },
+  "runtime": {
+    "torch": "2.9.1+cu128",
+    "transformers": "5.14.0.dev0",
+    "dtype": "bf16",
+    "threads": 10
+  },
+  "host": {
+    "platform": "Linux-5.15.0-113-generic-x86_64-with-glibc2.35",
+    "python": "3.12.11",
+    "cpu_count": 20,
+    "pid": 62786
+  },
+  "git": {
+    "commit": "70d13d7624fcda19f96c04d47a80bba57b3520e8",
+    "branch": "main",
+    "dirty": true
+  },
+  "data": {
+    "path": "/root/workspace/SparceFlow/benchmarks/manifests/colibri_smoke.jsonl",
+    "rows": 1,
+    "sha256": "8b0fe16b7636fb7410df08922c0af39f75a727008afeba2fc92c47d7e546c027"
+  },
+  "load": {
+    "seconds": 380.4858506929995,
+    "model_load_seconds": 191.82927798799938,
+    "materialize_seconds": 188.65657270500014,
+    "metrics": {
+      "rss_bytes": 71075586048,
+      "peak_rss_bytes": 72691056640,
+      "read_bytes": 28261720064,
+      "read_chars": 141451224,
+      "read_syscalls": 12648,
+      "user_seconds": 27.561071,
+      "system_seconds": 76.948115,
+      "minor_page_faults": 18382027,
+      "major_page_faults": 339879,
+      "voluntary_context_switches": 356234,
+      "involuntary_context_switches": 51389
+    },
+    "physical_resident": true
+  },
+  "questions": [
+    {
+      "id": "smoke-01",
+      "task": "smoke",
+      "gold": 0,
+      "prediction": 0,
+      "prediction_norm_char": 0,
+      "prediction_norm_token": 0,
+      "correct": true,
+      "correct_norm_char": true,
+      "correct_norm_token": true,
+      "choices": [
+        {
+          "loglikelihood": -0.5934625864028931,
+          "token_loglikelihoods": [
+            -0.5934625864028931
+          ],
+          "continuation_tokens": 1,
+          "continuation_chars": 6,
+          "forward_seconds": 1.2565961599993898
+        },
+        {
+          "loglikelihood": -7.732435703277588,
+          "token_loglikelihoods": [
+            -7.732435703277588
+          ],
+          "continuation_tokens": 1,
+          "continuation_chars": 7,
+          "forward_seconds": 1.2186262970008102
+        },
+        {
+          "loglikelihood": -9.811644554138184,
+          "token_loglikelihoods": [
+            -9.811644554138184
+          ],
+          "continuation_tokens": 1,
+          "continuation_chars": 5,
+          "forward_seconds": 1.152745536999646
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "n": 1,
+    "accuracy": 1.0,
+    "acc_norm_char": 1.0,
+    "acc_norm_token": 1.0,
+    "forward_seconds": 3.627967993999846
+  },
+  "finished_metrics": {
+    "rss_bytes": 70451814400,
+    "peak_rss_bytes": 72019390464,
+    "read_bytes": 28261699584,
+    "read_chars": 20412428,
+    "read_syscalls": 1251,
+    "user_seconds": 58.225169,
+    "system_seconds": 76.168662,
+    "minor_page_faults": 18285962,
+    "major_page_faults": 339926,
+    "voluntary_context_switches": 340212,
+    "involuntary_context_switches": 48130
+  }
+}

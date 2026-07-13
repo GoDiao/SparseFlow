@@ -1,0 +1,83 @@
+# SparseFlow Benchmark Framework
+
+本目录属于 `[Benchmark]` 轨道，负责可复现实验、质量 eval 和原始结果保存。
+CPU runtime、ExpertLocator、cache 和 prefetch 实现属于 `[Main Dev]` 轨道。
+
+## CPU Full Resident 性能基线
+
+使用当前服务器已有的 PyTorch/Transformers 环境，不使用 GPU：
+
+~~~bash
+CUDA_VISIBLE_DEVICES="" \
+OMP_NUM_THREADS=10 MKL_NUM_THREADS=10 \
+python3 -m benchmarks.run_cpu \
+  --model model/Qwen3.6-35B-A3B \
+  --manifest benchmarks/manifests/cpu_dev.jsonl \
+  --dtype bf16 \
+  --threads 10 \
+  --limit 1 \
+  --warmup 0 \
+  --runs 1 \
+  --max-new-tokens 8 \
+  --output benchmarks/results/cpu-resident-smoke.json
+~~~
+
+首次实验建议从 `--limit 1 --max-new-tokens 8` 开始。确认 CPU forward/generate
+正常后，再运行完整 manifest。完整 BF16 权重约 67GiB，加载时要预留系统和
+runtime 内存。默认 runner 会 materialize 参数，使 C1 真正测量物理 CPU
+resident；不要使用 `--no-materialize` 生成 C1 正式结果。
+
+`--no-materialize` 只用于额外记录 safetensors mmap/按需 page-fault 对照，
+不能和 Full Resident 结果混称。
+
+prefill 测量需要额外执行一次完整 forward，可显式开启：
+
+~~~bash
+python3 -m benchmarks.run_cpu \
+  --model model/Qwen3.6-35B-A3B \
+  --threads 10 --runs 3 --warmup 1 \
+  --max-new-tokens 32 --measure-prefill \
+  --output benchmarks/results/cpu-resident-decode32.json
+~~~
+
+结果文件会包含：
+
+- model config/index SHA256；
+- Git commit 和 dirty 状态；
+- PyTorch/Transformers/dtype/线程数；
+- load、prefill、generation 时间；
+- input/output token 数和 token IDs；
+- RSS、page fault、CPU time、process read bytes；
+- 每个 prompt 的 raw 结果和汇总 median。
+
+## Colibri 风格质量 smoke
+
+`score_choices.py` 使用 Colibri 的离线 JSONL 结构，对每个选项计算
+continuation log-likelihood，并输出 `accuracy`、`acc_norm_char` 和
+`acc_norm_token`：
+
+~~~bash
+CUDA_VISIBLE_DEVICES="" \
+python3 -m benchmarks.score_choices \
+  --model model/Qwen3.6-35B-A3B \
+  --data benchmarks/manifests/colibri_smoke.jsonl \
+  --limit 3 \
+  --threads 10 \
+  --output benchmarks/results/colibri-smoke.json
+~~~
+
+开发集和正式集必须在 `benchmarks/data/` 中冻结，并记录数据 manifest hash。
+
+## 结果与身份规范
+
+raw results 放在 `benchmarks/results/`，并进入 Git，保证本机、试验机和
+GitHub 之间可以同步实验数据。模型权重、下载缓存和大体积数据集仍不进入
+Git；固定 manifest 放在 `benchmarks/manifests/`。
+
+新增实现、实验记录或设计决策的正文末尾必须标注执行身份，例如：
+
+~~~text
+[Benchmark]
+~~~
+
+本框架设计和本文件由 [Benchmark] 执行。

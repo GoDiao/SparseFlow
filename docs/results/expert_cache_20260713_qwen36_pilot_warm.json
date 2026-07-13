@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "num_experts": 256
+  },
+  "trace": {
+    "requests": 128,
+    "layers": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "sha256": "aac1845a22190f52b8d0fbc0032bdbf92b8ce177a05048da6737b4ad87fbd448"
+  },
+  "results": [
+    {
+      "capacity_per_layer": 0,
+      "requests": 128,
+      "hits": 0,
+      "misses": 128,
+      "hit_rate": 0.0,
+      "evictions": 0,
+      "loaded_bytes": 805306368,
+      "cached_bytes": 0,
+      "cache_entries": 0,
+      "logical_bytes": 805306368,
+      "wall_time_ms": 182.42605500017817,
+      "read_latency_mean_ms": 1.4120027734776386,
+      "read_latency_p50_ms": 1.384589000736014,
+      "read_latency_p95_ms": 1.6983620007522404
+    },
+    {
+      "capacity_per_layer": 1,
+      "requests": 128,
+      "hits": 1,
+      "misses": 127,
+      "hit_rate": 0.0078125,
+      "evictions": 123,
+      "loaded_bytes": 799014912,
+      "cached_bytes": 25165824,
+      "cache_entries": 4,
+      "logical_bytes": 805306368,
+      "wall_time_ms": 167.153929000051,
+      "read_latency_mean_ms": 1.3028458899183117,
+      "read_latency_p50_ms": 1.211436001540278,
+      "read_latency_p95_ms": 1.7760540013114223
+    },
+    {
+      "capacity_per_layer": 2,
+      "requests": 128,
+      "hits": 2,
+      "misses": 126,
+      "hit_rate": 0.015625,
+      "evictions": 118,
+      "loaded_bytes": 792723456,
+      "cached_bytes": 50331648,
+      "cache_entries": 8,
+      "logical_bytes": 805306368,
+      "wall_time_ms": 207.203717000084,
+      "read_latency_mean_ms": 1.6296430871917105,
+      "read_latency_p50_ms": 1.4367809999384917,
+      "read_latency_p95_ms": 3.2253760000457987
+    },
+    {
+      "capacity_per_layer": 4,
+      "requests": 128,
+      "hits": 6,
+      "misses": 122,
+      "hit_rate": 0.046875,
+      "evictions": 106,
+      "loaded_bytes": 767557632,
+      "cached_bytes": 100663296,
+      "cache_entries": 16,
+      "logical_bytes": 805306368,
+      "wall_time_ms": 269.4344789997558,
+      "read_latency_mean_ms": 2.1904039427144957,
+      "read_latency_p50_ms": 1.8461590007063933,
+      "read_latency_p95_ms": 4.176110000116751
+    }
+  ]
+}
