@@ -1,0 +1,7 @@
+/_reference/
+/docs/colibri_borrowable_modules.md
+/.cache/
+/.venv/
+/model/
+__pycache__/
+*.py[cod]
