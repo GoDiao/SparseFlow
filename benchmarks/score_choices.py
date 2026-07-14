@@ -119,7 +119,10 @@ def main(argv: list[str] | None = None) -> int:
 
     started = process_snapshot()
     load_start = time.perf_counter()
+    tokenizer_start = time.perf_counter()
     tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True, use_fast=True)
+    tokenizer_load_seconds = time.perf_counter() - tokenizer_start
+    model_start = time.perf_counter()
     model = AutoModelForImageTextToText.from_pretrained(
         model_dir,
         local_files_only=True,
@@ -128,12 +131,13 @@ def main(argv: list[str] | None = None) -> int:
         low_cpu_mem_usage=True,
         use_safetensors=True,
     ).eval()
+    model_load_seconds = time.perf_counter() - model_start
     materialize_seconds = materialize_cpu_resident(model, torch)
     load_seconds = time.perf_counter() - load_start
     loaded = process_snapshot()
 
     result: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "backend": "transformers_cpu_choice_score",
         "model": model_snapshot(model_dir),
         "runtime": {
@@ -150,8 +154,9 @@ def main(argv: list[str] | None = None) -> int:
             "sha256": sha256_text(data_path.read_text(encoding="utf-8").splitlines(True)),
         },
         "load": {
-            "seconds": load_seconds + materialize_seconds,
-            "model_load_seconds": load_seconds,
+            "seconds": load_seconds,
+            "tokenizer_load_seconds": tokenizer_load_seconds,
+            "model_load_seconds": model_load_seconds,
             "materialize_seconds": materialize_seconds,
             "metrics": loaded,
             "physical_resident": True,

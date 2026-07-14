@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "kind": "qwen3_5_moe_cache_correctness_matrix",
+  "agent": "Main Dev",
+  "model": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+  "layer": 0,
+  "dtype": "bfloat16",
+  "correctness": {
+    "all_real_runs_exact_equal": true,
+    "max_abs_error": 0.0,
+    "max_rel_error": 0.0
+  },
+  "runs": [
+    {
+      "name": "real_hit_and_batch_union",
+      "rows": 8,
+      "forwards": 4,
+      "repeats": 2,
+      "cache_slots": 64,
+      "raw_route_requests_per_forward": 64,
+      "unique_experts_per_forward": [59, 59, 54, 54],
+      "cache": {
+        "requests": 226,
+        "hits": 123,
+        "misses": 103,
+        "hit_rate": 0.5442477876106194,
+        "evictions": 39,
+        "loaded_bytes": 648019968,
+        "cached_bytes": 402653184,
+        "cache_entries": 64
+      },
+      "reader": {
+        "read_calls": 206,
+        "read_bytes": 648019968
+      },
+      "correctness": {
+        "all_exact_equal": true,
+        "max_abs_error": 0.0,
+        "max_rel_error": 0.0
+      },
+      "invariants": {
+        "cache_request_partition": true,
+        "loaded_bytes_match_reader": true,
+        "cached_bytes_within_budget": true,
+        "per_forward_request_partition": true
+      }
+    },
+    {
+      "name": "real_per_layer_lru_eviction",
+      "rows": 2,
+      "forwards": 2,
+      "repeats": 1,
+      "cache_slots": 4,
+      "cache": {
+        "requests": 30,
+        "hits": 0,
+        "misses": 30,
+        "hit_rate": 0.0,
+        "evictions": 26,
+        "loaded_bytes": 188743680,
+        "cached_bytes": 25165824,
+        "cache_entries": 4
+      },
+      "reader": {
+        "read_calls": 60,
+        "read_bytes": 188743680
+      },
+      "correctness": {
+        "all_exact_equal": true,
+        "max_abs_error": 0.0,
+        "max_rel_error": 0.0
+      },
+      "invariants": {
+        "cache_request_partition": true,
+        "loaded_bytes_match_reader": true,
+        "cached_bytes_within_budget": true,
+        "per_forward_request_partition": true
+      }
+    },
+    {
+      "name": "real_global_byte_budget",
+      "rows": 2,
+      "forwards": 2,
+      "repeats": 1,
+      "cache_slots": null,
+      "max_bytes": 6291456,
+      "cache": {
+        "requests": 30,
+        "hits": 0,
+        "misses": 30,
+        "hit_rate": 0.0,
+        "evictions": 29,
+        "loaded_bytes": 188743680,
+        "cached_bytes": 6291456,
+        "cache_entries": 1
+      },
+      "reader": {
+        "read_calls": 60,
+        "read_bytes": 188743680
+      },
+      "correctness": {
+        "all_exact_equal": true,
+        "max_abs_error": 0.0,
+        "max_rel_error": 0.0
+      },
+      "invariants": {
+        "cache_request_partition": true,
+        "loaded_bytes_match_reader": true,
+        "cached_bytes_within_budget": true,
+        "per_forward_request_partition": true
+      }
+    }
+  ],
+  "synthetic": {
+    "cache_slots_2": {
+      "requests": 8,
+      "hits": 6,
+      "misses": 2,
+      "evictions": 0,
+      "loaded_bytes": 144,
+      "reader_bytes": 144,
+      "cached_bytes": 144,
+      "exact_equal": true
+    },
+    "cache_slots_1": {
+      "requests": 4,
+      "hits": 0,
+      "misses": 4,
+      "evictions": 3,
+      "loaded_bytes": 288,
+      "reader_bytes": 288,
+      "cached_bytes": 72,
+      "exact_equal": true
+    },
+    "max_bytes_72": {
+      "cached_bytes": 72,
+      "exact_equal": true
+    }
+  }
+}

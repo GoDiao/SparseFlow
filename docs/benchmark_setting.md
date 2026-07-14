@@ -431,6 +431,14 @@ expert_reuse_distance
 
 性能计时必须把 model load、prefill 和 decode 分开。Colibri 风格的单一 tok/s 不能替代这些拆分指标。
 
+对于 CPU generation runner，首个 prompt forward 同时产生第一个新 token，计入
+`prefill_seconds` 和 `time_to_first_token_seconds`；只有后续单 token forward
+计入 `decode_seconds` 和 `decode_tokens_per_second`。`end_to_end_seconds` 才是
+从 prompt forward 开始到全部生成 token 完成的总时间，不能将其标记为纯 decode。
+
+Choice scoring 的 `load.seconds` 是 tokenizer、model load 和 materialization
+区间的一次性总和；`materialize_seconds` 已经包含在其中，禁止重复相加。
+
 ## 12. 运行规范
 
 每个正式 workload：
@@ -465,7 +473,7 @@ precision and quantization metadata
 
 ~~~json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "experiment_id": "C3-cache32-decode32",
   "backend": "sparseflow_cpu_streaming",
   "model": {

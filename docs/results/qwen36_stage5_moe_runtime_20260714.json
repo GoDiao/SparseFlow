@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "kind": "qwen3_5_stage5_moe_runtime_matrix",
+  "agent": "Main Dev",
+  "model": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+  "layers": [0, 1],
+  "rows": 2,
+  "seed": 1234,
+  "mode": "MoE-only; no attention/residual/KV/generation",
+  "all_runs_exact_equal": true,
+  "runs": [
+    {
+      "name": "no_prefetch_gap0",
+      "prefetch_workers": 0,
+      "coalesce_gap": 0,
+      "resident_read_calls": 14,
+      "resident_read_bytes": 3235913728,
+      "streaming_read_calls": 74,
+      "streaming_read_bytes": 216014848,
+      "routed_read_calls": 64,
+      "routed_read_bytes": 201326592,
+      "loaded_bytes": 201326592,
+      "timing": {
+        "resident_wall_ms": 4184.559863000231,
+        "streaming_wall_ms": 340.98476299959657,
+        "page_cache_state": "not controlled"
+      },
+      "cache": {
+        "requests": 32,
+        "hits": 0,
+        "misses": 32,
+        "evictions": 0,
+        "cached_bytes": 201326592
+      },
+      "prefetch": {
+        "submitted": 0,
+        "completed": 0,
+        "failed": 0
+      },
+      "correctness": {
+        "all_exact_equal": true,
+        "max_abs_error": 0.0,
+        "max_rel_error": 0.0
+      },
+      "invariants": {
+        "cache_request_partition": true,
+        "loaded_bytes_match_reader": true,
+        "physical_read_at_least_useful": true,
+        "cached_bytes_within_budget": true
+      }
+    },
+    {
+      "name": "prefetch_gap0",
+      "prefetch_workers": 2,
+      "coalesce_gap": 0,
+      "resident_read_calls": 14,
+      "resident_read_bytes": 3235913728,
+      "streaming_read_calls": 72,
+      "streaming_read_bytes": 216014848,
+      "routed_read_calls": 62,
+      "routed_read_bytes": 201326592,
+      "loaded_bytes": 201326592,
+      "timing": {
+        "resident_wall_ms": 5255.946227000095,
+        "streaming_wall_ms": 341.4620629998808,
+        "page_cache_state": "not controlled"
+      },
+      "cache": {
+        "requests": 32,
+        "hits": 30,
+        "misses": 2,
+        "evictions": 0,
+        "cached_bytes": 201326592
+      },
+      "prefetch": {
+        "submitted": 32,
+        "batches": 2,
+        "completed": 2,
+        "failed": 0,
+        "waits": 2,
+        "coalesced_ranges": 62,
+        "logical_ranges": 64,
+        "physical_bytes": 201326592,
+        "useful_bytes": 201326592,
+        "wasted_bytes": 0,
+        "read_ms_total": 132.6413050001065,
+        "wait_ms_total": 267.24719799995
+      },
+      "correctness": {
+        "all_exact_equal": true,
+        "max_abs_error": 0.0,
+        "max_rel_error": 0.0
+      },
+      "invariants": {
+        "cache_request_partition": true,
+        "loaded_bytes_match_reader": true,
+        "physical_read_at_least_useful": true,
+        "cached_bytes_within_budget": true
+      }
+    },
+    {
+      "name": "prefetch_gap6mib",
+      "prefetch_workers": 2,
+      "coalesce_gap": 6291456,
+      "resident_read_calls": 14,
+      "resident_read_bytes": 3235913728,
+      "streaming_read_calls": 68,
+      "streaming_read_bytes": 236986368,
+      "routed_read_calls": 58,
+      "routed_read_bytes": 222298112,
+      "loaded_bytes": 201326592,
+      "timing": {
+        "resident_wall_ms": 5602.1004310000535,
+        "streaming_wall_ms": 381.56462000006286,
+        "page_cache_state": "not controlled"
+      },
+      "cache": {
+        "requests": 32,
+        "hits": 30,
+        "misses": 2,
+        "evictions": 0,
+        "cached_bytes": 201326592
+      },
+      "prefetch": {
+        "submitted": 32,
+        "batches": 2,
+        "completed": 2,
+        "failed": 0,
+        "waits": 2,
+        "coalesced_ranges": 58,
+        "logical_ranges": 64,
+        "physical_bytes": 222298112,
+        "useful_bytes": 201326592,
+        "wasted_bytes": 20971520,
+        "read_ms_total": 138.809148999826,
+        "wait_ms_total": 331.5495239999109
+      },
+      "correctness": {
+        "all_exact_equal": true,
+        "max_abs_error": 0.0,
+        "max_rel_error": 0.0
+      },
+      "invariants": {
+        "cache_request_partition": true,
+        "loaded_bytes_match_reader": true,
+        "physical_read_at_least_useful": true,
+        "cached_bytes_within_budget": true
+      }
+    }
+  ],
+  "synthetic": {
+    "two_layers_prefetch": {
+      "layers": [0, 1],
+      "cache_slots": 2,
+      "prefetch_workers": 2,
+      "requests": 4,
+      "hits": 2,
+      "misses": 2,
+      "prefetch_batches": 2,
+      "coalesced_ranges": 2,
+      "all_exact_equal": true
+    },
+    "batch_coalescing": {
+      "logical_ranges": 4,
+      "physical_ranges": 1,
+      "useful_bytes": 8,
+      "physical_bytes": 8,
+      "wasted_bytes": 0
+    },
+    "prefetch_failure": {
+      "failed": 1,
+      "completed": 0,
+      "inflight_empty": true
+    }
+  }
+}

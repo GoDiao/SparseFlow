@@ -30,7 +30,8 @@ resident；不要使用 `--no-materialize` 生成 C1 正式结果。
 `--no-materialize` 只用于额外记录 safetensors mmap/按需 page-fault 对照，
 不能和 Full Resident 结果混称。
 
-prefill 测量需要额外执行一次完整 forward，可显式开启：
+prefill 会在正式 greedy generation 中自动单独计时；`--measure-prefill` 保留为
+兼容参数，不再额外执行一次 forward：
 
 ~~~bash
 python3 -m benchmarks.run_cpu \
@@ -45,7 +46,8 @@ python3 -m benchmarks.run_cpu \
 - model config/index SHA256；
 - Git commit 和 dirty 状态；
 - PyTorch/Transformers/dtype/线程数；
-- load、prefill、generation 时间；
+- tokenizer/model/materialization load 分项时间；
+- prefill/TTFT、steady-state decode、端到端生成时间；
 - input/output token 数和 token IDs；
 - RSS、page fault、CPU time、process read bytes；
 - 每个 prompt 的 raw 结果和汇总 median。
@@ -55,6 +57,9 @@ python3 -m benchmarks.run_cpu \
 `score_choices.py` 使用 Colibri 的离线 JSONL 结构，对每个选项计算
 continuation log-likelihood，并输出 `accuracy`、`acc_norm_char` 和
 `acc_norm_token`：
+
+choice scoring 的 `load.seconds` 是一次性的总加载时间，已经包含
+`materialize_seconds`；不能再把 materialization 加到总时间上。
 
 ~~~bash
 CUDA_VISIBLE_DEVICES="" \

@@ -59,6 +59,12 @@ python -m sparseflow expert-load model/Qwen3.6-35B-A3B --layer 0 --expert 17
 - colibri 风格 heat decay + hysteresis swap。
 - 暂不做 VRAM hot tier。
 
+### Phase 3 status
+
+基础阶段已经完成：ExpertCache、per-layer LRU、global byte budget、真实
+route trace、batch-union 和 `expert-bench` 均已实现并有结果记录。Hot-tier
+heat policy、predictive prefetch 和 VRAM tier 保留到后续优化阶段。
+
 ## Phase 4: Minimal Runtime Boundary
 
 完整 Qwen3.6 包含 Gated DeltaNet、Gated Attention、Vision、MTP，早期不承诺完整生成。项目边界分成两层：
@@ -66,12 +72,123 @@ python -m sparseflow expert-load model/Qwen3.6-35B-A3B --layer 0 --expert 17
 - SparseFlow core：shard index、model footprint、tier plan、expert locate、cache、prefetch。
 - Model adapters：模型命名规则、shape、expert slice、router/dense 分类。
 
+### Phase 4 status
+
+单层 Qwen3.6 MoE 的 resident/cached-streaming runtime 已完成：
+`CachedExpertProvider` 将正式 ExpertCache 接入 router、routed expert、
+shared expert、shared gate 和 final output，并通过 synthetic 与真实
+Qwen3.6 layer 0 的 9 项验收。结果见
+`docs/results/qwen36_moe_cache_correctness_20260714.md`。
+
+I/O coalescing、同层异步 prefetch 和多层 MoE-only runtime 已完成，结果见
+`docs/results/qwen36_stage5_moe_runtime_20260714.md`。完整 Qwen3.6
+attention、Gated DeltaNet、KV cache 和 generation 仍不属于本阶段。
+
 这样 SparseFlow 不会被 Qwen3.6 的特殊结构绑死。
+
+## Phase 5: I/O and MoE-only runtime
+
+阶段 5 已完成：
+
+- 批量 shard range coalescing；
+- useful/physical/wasted byte 统计；
+- bounded asynchronous prefetch 和 in-flight 去重；
+- 两层及多层 MoE-only resident/streaming 对照；
+- prefetch failure 清理、CLI 和真实 Qwen3.6 layer 0–1 结果。
+
+结果：`docs/results/qwen36_stage5_moe_runtime_20260714.md`。
+
+## Phase 6: Full Qwen3.6 text-only reference runtime
+
+阶段 6 的目标是把已经验证过的 MoE storage path 接进完整的 Qwen3.6
+文本模型流程，但先把 Python 版本定位为 correctness/reference runtime，
+不把它误称为最终低内存或高性能推理器。
+
+当前数据流是：
+
+```text
+tokenizer/chat template
+  -> embedding
+  -> attention / Gated DeltaNet
+  -> router
+  -> ExpertCache + ShardReader routed experts
+  -> shared expert / residual / norm
+  -> lm_head logits
+  -> past_key_values KV cache
+  -> one-token decode / greedy generation
+```
+
+### 阶段 6 的六个实现边界
+
+1. **Expert matmul / SiLU**
+   - resident 与 streaming 共用 `run_expert_kernel`，避免存储策略引入
+     算术差异。
+   - 参考路径使用 `linear(gate_up).chunk -> silu(gate) * up ->
+     linear(down)`，再由 `run_routed_experts` 做 top-k 权重累加。
+   - 后续 native kernel 才考虑 fused gate/up、SiLU、down，以及按
+     batch-union 重排 token。
+
+2. **BF16 / INT8 解码和矩阵乘**
+   - 当前阶段先以 BF16 原始 slice 解码为正确性基线，验证 dtype、shape、
+     expert axis 和 byte range 一致。
+   - INT8/INT4 的量化格式、scale/zero-point、反量化融合和质量回归不在
+     当前 smoke 的验收范围，必须在 BF16 reference 稳定后由 profiling
+     和 Benchmark 共同定义。
+
+3. **coalesced pread / async I/O**
+   - 复用阶段 5 的持久 fd、`pread`、range coalescing、in-flight 去重和
+     bounded worker pool。
+   - 全模型 forward 中由当前层 router 产生 expert 请求，prefetch 在
+     expert kernel 消费前提交同层批量读取；记录 useful/physical/wasted
+     bytes、等待和失败。
+
+4. **cache lookup / tensor view 生命周期**
+   - `ExpertCache` 只保存模型无关的 raw bytes。
+   - `CachedExpertProvider` 将 bytes 解码成 tensor view，并把 view 绑定到
+     对应的 cache entry；entry 被 eviction 后禁止继续复用旧 view。
+   - 同时支持 per-layer slots 和 global byte budget，所有 lookup、miss、
+     eviction、loaded bytes 都必须进入结果 JSON。
+
+5. **attention / DeltaNet**
+   - 阶段 6 Python 参考实现直接复用 Transformers 官方 Qwen3.6 模块，
+     覆盖 Gated Attention、Gated DeltaNet、norm、residual 和输出接口。
+   - SparseFlow 暂不复制一套模型特化 attention kernel；只有在完整流程
+     正确性和 profiling 后，才将热点下沉到 C/C++/Rust。
+
+6. **KV cache 操作**
+   - prefill 使用 `use_cache=True` 获取 Transformers `past_key_values`。
+   - decode 每次只输入上一个 token，扩展 attention mask，并把更新后的
+     cache 传回下一步。
+   - 第一版验证 greedy token 回归和 cache 生命周期；paged KV、量化 KV、
+     sliding-window/长上下文优化留到后续阶段。
+
+### Phase 6 status
+
+已实现 `Qwen36TextRuntime`、`SparseFlowQwenExperts`、`text-generate` 和
+`text-check` CLI。`text-check` 顺序执行 resident/streaming，固定两侧为
+相同的 eager expert 算术，并比较 input IDs、generated IDs、文本以及每个
+prefill/decode 步骤的完整词表 logits SHA-256。
+
+真实 Qwen3.6 已通过 4-token 验收：prefill 加连续三次 KV-cache decode 的
+`248320` 维 BF16 logits 指纹逐步完全一致。带两个 prefetch workers 的
+路径也通过同一门槛。Transformers 默认 `grouped_mm` 被保留为独立性能
+backend，不与 eager streaming 混作 storage-policy 正确性比较。结果见
+`docs/results/qwen36_stage6_text_runtime_20260714.md`。
+
+当前关键限制是 `from_pretrained` 仍先由 Transformers 完整加载 checkpoint，
+再替换 routed experts；因此这是完整流程的集成/正确性里程碑，还不是
+Colibri 式低峰值内存加载器。
+
+## Phase 7: Memory-native and performance runtime
+
+阶段 7 再处理最终效果：meta-device/custom state-dict loader、dense 常驻、
+expert 不全量 materialize、INT8/INT4 解码、fused expert matmul、平台专用
+异步 I/O、hot expert tier、paged/quantized KV cache，以及 C++/Rust 下沉。
+顺序必须由阶段 6 的 correctness 和 Benchmark profiling 驱动。
 
 ## Early Non-goals
 
-- 不直接实现完整 Qwen3.6 forward。
-- 不做 VRAM expert hot tier。
-- 不做 MTP/speculative decoding。
-- 不做 UI 直连 runtime。
+- 阶段 6 暂不支持 vision 输入、MTP/speculative decoding 和生产级 serving。
+- 阶段 6 暂不承诺 INT8/INT4 质量、低峰值内存或正式吞吐结论。
+- 阶段 7 之前不把 Python reference kernel 当作最终 native backend。
 - 不默认下载模型或缓存到 C 盘。

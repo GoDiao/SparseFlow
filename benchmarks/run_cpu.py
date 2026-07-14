@@ -56,16 +56,6 @@ def dtype_from_name(torch: Any, name: str) -> Any:
     }[name]
 
 
-def measure_prefill(model: Any, inputs: dict[str, Any]) -> float:
-    start = now()
-    import torch
-
-    with torch.inference_mode():
-        output = model(**inputs, use_cache=True)
-    del output
-    return now() - start
-
-
 def materialize_cpu_resident(model: Any, torch: Any) -> float:
     """Copy mmap-backed CPU tensors into ordinary anonymous CPU memory."""
     start = now()
@@ -83,6 +73,75 @@ def materialize_cpu_resident(model: Any, torch: Any) -> float:
     return now() - start
 
 
+def greedy_generate_timed(
+    model: Any,
+    inputs: dict[str, Any],
+    max_new_tokens: int,
+    torch: Any,
+) -> dict[str, Any]:
+    """Run greedy generation with prefill and decode timed separately.
+
+    The first forward pass consumes the prompt and produces the first new
+    token, so it is reported as prefill/TTFT. Only subsequent one-token
+    forwards are reported as decode throughput. This avoids labeling the
+    end-to-end ``generate`` duration as steady-state decode speed.
+    """
+    if max_new_tokens < 1:
+        raise ValueError("max_new_tokens must be positive")
+
+    input_ids = inputs["input_ids"]
+    attention_mask = inputs.get("attention_mask")
+    if attention_mask is None:
+        attention_mask = torch.ones_like(input_ids)
+
+    prefill_start = now()
+    with torch.inference_mode():
+        first = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            use_cache=True,
+        )
+        next_token = first.logits[:, -1, :].argmax(dim=-1, keepdim=True)
+    prefill_seconds = now() - prefill_start
+
+    generated_tokens = [next_token]
+    past_key_values = getattr(first, "past_key_values", None)
+    if max_new_tokens > 1 and past_key_values is None:
+        raise RuntimeError("model did not return past_key_values for decode timing")
+
+    decode_token_seconds: list[float] = []
+    decode_start = now()
+    for _ in range(1, max_new_tokens):
+        attention_mask = torch.cat(
+            [attention_mask, torch.ones_like(next_token)], dim=-1
+        )
+        token_start = now()
+        with torch.inference_mode():
+            output = model(
+                input_ids=next_token,
+                attention_mask=attention_mask,
+                past_key_values=past_key_values,
+                use_cache=True,
+            )
+            next_token = output.logits[:, -1, :].argmax(dim=-1, keepdim=True)
+        decode_token_seconds.append(now() - token_start)
+        generated_tokens.append(next_token)
+        past_key_values = getattr(output, "past_key_values", None)
+
+    decode_seconds = now() - decode_start
+    generated = torch.cat(generated_tokens, dim=-1)
+    decode_tokens = max(0, int(generated.shape[-1]) - 1)
+    return {
+        "output": torch.cat([input_ids, generated], dim=-1),
+        "prefill_seconds": prefill_seconds,
+        "time_to_first_token_seconds": prefill_seconds,
+        "decode_seconds": decode_seconds if decode_tokens else 0.0,
+        "decode_tokens": decode_tokens,
+        "decode_token_seconds": decode_token_seconds,
+        "end_to_end_seconds": prefill_seconds + decode_seconds,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run a reproducible CPU Full Resident Transformers benchmark."
@@ -96,7 +155,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=8)
-    parser.add_argument("--measure-prefill", action="store_true")
+    parser.add_argument(
+        "--measure-prefill",
+        action="store_true",
+        help="Compatibility flag; prefill is always timed separately now.",
+    )
     parser.add_argument(
         "--no-materialize",
         action="store_true",
@@ -139,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
     dtype = dtype_from_name(torch, args.dtype)
     manifest_lines = manifest_path.read_text(encoding="utf-8").splitlines(keepends=True)
     result: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "experiment_id": f"cpu-resident-{args.dtype}",
         "backend": "transformers_cpu_resident",
         "started_utc": datetime.now(timezone.utc).isoformat(),
@@ -162,7 +225,8 @@ def main(argv: list[str] | None = None) -> int:
             "runs": args.runs,
             "warmup": args.warmup,
             "max_new_tokens": args.max_new_tokens,
-            "measure_prefill": args.measure_prefill,
+            "prefill_always_measured": True,
+            "measure_prefill_compat_flag": args.measure_prefill,
             "batch_size": 1,
         },
         "load": {},
@@ -221,23 +285,17 @@ def main(argv: list[str] | None = None) -> int:
             inputs = encoded[row["id"]]
             input_tokens = int(inputs["input_ids"].shape[-1])
             before = process_snapshot()
-            prefill_seconds = None
-            if args.measure_prefill:
-                prefill_seconds = measure_prefill(model, inputs)
-
-            start = _time.perf_counter()
-            with torch.inference_mode():
-                output = model.generate(
-                    **inputs,
-                    max_new_tokens=args.max_new_tokens,
-                    do_sample=False,
-                    use_cache=True,
-                )
-            generation_seconds = _time.perf_counter() - start
+            timed = greedy_generate_timed(
+                model, inputs, args.max_new_tokens, torch
+            )
+            output = timed["output"]
             after = process_snapshot()
 
             new_tokens = output[0, input_tokens:]
             generated = int(new_tokens.shape[-1])
+            decode_tokens = int(timed["decode_tokens"])
+            decode_seconds = float(timed["decode_seconds"])
+            end_to_end_seconds = float(timed["end_to_end_seconds"])
             record = {
                 "run_index": run_index,
                 "prompt_id": row["id"],
@@ -245,10 +303,19 @@ def main(argv: list[str] | None = None) -> int:
                 "category": row.get("category"),
                 "input_tokens": input_tokens,
                 "generated_tokens": generated,
-                "prefill_seconds": prefill_seconds,
-                "generation_seconds": generation_seconds,
-                "generation_tokens_per_second": generated / generation_seconds
-                if generation_seconds > 0
+                "prefill_seconds": float(timed["prefill_seconds"]),
+                "time_to_first_token_seconds": float(
+                    timed["time_to_first_token_seconds"]
+                ),
+                "decode_seconds": decode_seconds,
+                "decode_tokens": decode_tokens,
+                "decode_tokens_per_second": decode_tokens / decode_seconds
+                if decode_seconds > 0 and decode_tokens > 0
+                else 0.0,
+                "decode_token_seconds": timed["decode_token_seconds"],
+                "end_to_end_seconds": end_to_end_seconds,
+                "end_to_end_tokens_per_second": generated / end_to_end_seconds
+                if end_to_end_seconds > 0
                 else 0.0,
                 "metrics_delta": delta(before, after),
                 "output_token_ids": [int(value) for value in new_tokens.tolist()],
@@ -259,16 +326,31 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"run={run_index + 1}/{args.runs} prompt={row['id']} "
                 f"input={input_tokens} output={generated} "
-                f"gen_tok_s={record['generation_tokens_per_second']:.4f}",
+                f"decode_tok_s={record['decode_tokens_per_second']:.4f} "
+                f"e2e_tok_s={record['end_to_end_tokens_per_second']:.4f}",
                 flush=True,
             )
 
-    speeds = [float(item["generation_tokens_per_second"]) for item in result["runs"]]
+    decode_speeds = [
+        float(item["decode_tokens_per_second"])
+        for item in result["runs"]
+        if int(item["decode_tokens"]) > 0
+    ]
+    end_to_end_speeds = [
+        float(item["end_to_end_tokens_per_second"]) for item in result["runs"]
+    ]
     result["summary"] = {
-        "run_count": len(speeds),
-        "median_generation_tokens_per_second": statistics.median(speeds),
-        "min_generation_tokens_per_second": min(speeds),
-        "max_generation_tokens_per_second": max(speeds),
+        "run_count": len(result["runs"]),
+        "median_decode_tokens_per_second": statistics.median(decode_speeds)
+        if decode_speeds
+        else None,
+        "min_decode_tokens_per_second": min(decode_speeds)
+        if decode_speeds
+        else None,
+        "max_decode_tokens_per_second": max(decode_speeds)
+        if decode_speeds
+        else None,
+        "median_end_to_end_tokens_per_second": statistics.median(end_to_end_speeds),
         "peak_rss_bytes": max(
             [result["load"]["metrics_delta"].get("peak_rss_bytes", 0)]
             + [item["metrics_delta"].get("peak_rss_bytes", 0) for item in result["runs"]]

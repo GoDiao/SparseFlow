@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "kind": "qwen3_5_moe_layer_correctness",
+  "agent": "Main Dev",
+  "model": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+  "layer": 0,
+  "rows": 2,
+  "seed": 1234,
+  "hidden_size": 2048,
+  "num_experts": 256,
+  "top_k": 8,
+  "dtype": "bfloat16",
+  "selected_experts": [
+    [190, 107, 124, 139, 152, 253, 199, 33],
+    [42, 96, 129, 39, 45, 145, 205, 164]
+  ],
+  "routing_weights": [
+    [0.2080078125, 0.15625, 0.1435546875, 0.1015625, 0.1015625, 0.10009765625, 0.09912109375, 0.08984375],
+    [0.2109375, 0.18359375, 0.1259765625, 0.10107421875, 0.09521484375, 0.09521484375, 0.09521484375, 0.09375]
+  ],
+  "streaming_expert_ids": [33, 39, 42, 45, 96, 107, 124, 129, 139, 145, 152, 164, 190, 199, 205, 253],
+  "resident_storage": {
+    "policy": "preload all routed experts in the layer",
+    "expert_count": 256,
+    "read_calls": 2,
+    "read_bytes": 1610612736,
+    "expected_routed_bytes": 1610612736
+  },
+  "streaming_storage": {
+    "policy": "read each unique selected expert once",
+    "expert_count": 16,
+    "read_calls": 32,
+    "read_bytes": 100663296,
+    "expected_selected_bytes": 100663296
+  },
+  "common_storage": {
+    "read_calls": 5,
+    "read_bytes": 7344128
+  },
+  "comparison": {
+    "selected_experts": {
+      "exact_equal": true,
+      "shape_equal": true,
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "shape": [2, 8],
+      "dtype": "int64"
+    },
+    "routing_weights": {
+      "exact_equal": true,
+      "shape_equal": true,
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "shape": [2, 8],
+      "dtype": "bfloat16"
+    },
+    "router_logits": {
+      "exact_equal": true,
+      "shape_equal": true,
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "shape": [2, 256],
+      "dtype": "bfloat16"
+    },
+    "routed_output": {
+      "exact_equal": true,
+      "shape_equal": true,
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "shape": [2, 2048],
+      "dtype": "bfloat16"
+    },
+    "shared_output": {
+      "exact_equal": true,
+      "shape_equal": true,
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "shape": [2, 2048],
+      "dtype": "bfloat16"
+    },
+    "final_output": {
+      "exact_equal": true,
+      "shape_equal": true,
+      "max_abs_error": 0.0,
+      "max_rel_error": 0.0,
+      "shape": [2, 2048],
+      "dtype": "bfloat16"
+    }
+  },
+  "kernel": "router softmax/topk -> routed weighted accumulation + shared gated MLP"
+}

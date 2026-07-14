@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "kind": "qwen3_5_moe_transformers_reference_check",
+  "agent": "Main Dev",
+  "model": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+  "layer": 0,
+  "rows": 2,
+  "seed": 1234,
+  "dtype": "bfloat16",
+  "reference": "transformers.models.qwen3_5_moe.modeling_qwen3_5_moe.Qwen3_5MoeSparseMoeBlock",
+  "exact_equal": true,
+  "max_abs_error": 0.0,
+  "max_rel_error": 0.0,
+  "scope": "MoE block only; excludes the surrounding Qwen3.6 transformer, attention, linear attention, and generation cache"
+}

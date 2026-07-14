@@ -6,14 +6,14 @@ import math
 import random
 import statistics
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
 from .cache import ExpertCache
-from .loader import read_expert_bytes
+from .loader import ShardReader, read_expert_bytes
 from .locator import ExpertLocator
-
-TraceRequest = tuple[int, int]
+from .trace import RouteTrace, TraceRequest, load_route_trace, trace_sha256
 
 
 def parse_capacities(value: str) -> list[int]:
@@ -29,6 +29,27 @@ def parse_capacities(value: str) -> list[int]:
     if not capacities:
         raise ValueError("at least one cache capacity is required")
     return capacities
+
+
+def parse_byte_budgets(value: str) -> list[int]:
+    budgets = []
+    multipliers = {"": 1, "b": 1, "kb": 1024, "kib": 1024, "mb": 1024**2, "mib": 1024**2, "gb": 1024**3, "gib": 1024**3}
+    for item in value.split(","):
+        token = item.strip().lower()
+        if not token:
+            continue
+        suffix = next((suffix for suffix in sorted(multipliers, key=len, reverse=True) if suffix and token.endswith(suffix)), "")
+        number = token[: -len(suffix)] if suffix else token
+        try:
+            budget = int(float(number) * multipliers[suffix])
+        except ValueError as exc:
+            raise ValueError(f"invalid byte budget: {item}") from exc
+        if budget < 0:
+            raise ValueError(f"byte budget must be non-negative: {item}")
+        budgets.append(budget)
+    if not budgets:
+        raise ValueError("at least one byte budget is required")
+    return budgets
 
 
 def parse_layers(value: str, num_layers: int) -> list[int]:
@@ -86,83 +107,103 @@ def generate_trace(
 
 
 def load_trace(path: str | Path) -> list[TraceRequest]:
-    source = Path(path)
-    raw = json.loads(source.read_text(encoding="utf-8"))
-    if isinstance(raw, dict):
-        raw = raw.get("requests")
-    if not isinstance(raw, list):
-        raise ValueError(f"trace must be a JSON list or an object with requests: {source}")
-
-    trace: list[TraceRequest] = []
-    for index, item in enumerate(raw):
-        if isinstance(item, dict):
-            layer, expert = item.get("layer"), item.get("expert")
-        elif isinstance(item, list) and len(item) == 2:
-            layer, expert = item
-        else:
-            raise ValueError(f"invalid trace request at index {index}: {item!r}")
-        if not isinstance(layer, int) or not isinstance(expert, int):
-            raise ValueError(f"trace request must contain integer layer/expert at index {index}")
-        trace.append((layer, expert))
-    if not trace:
-        raise ValueError(f"trace is empty: {source}")
-    return trace
+    return load_route_trace(path).flat_requests
 
 
 def run_expert_benchmark(
     model_dir: str | Path,
     capacities: Iterable[int],
-    trace: list[TraceRequest],
+    trace: list[TraceRequest] | RouteTrace,
+    batch_union: bool = False,
+    byte_budgets: Iterable[int] | None = None,
 ) -> dict[str, Any]:
     locator = ExpertLocator(model_dir)
     capacities = list(capacities)
-    if not capacities:
-        raise ValueError("at least one cache capacity is required")
+    if byte_budgets is not None:
+        specs = [(None, budget) for budget in byte_budgets]
+    else:
+        specs = [(capacity, None) for capacity in capacities]
+    if not specs:
+        raise ValueError("at least one cache capacity or byte budget is required")
+
+    route_trace = trace if isinstance(trace, RouteTrace) else RouteTrace.from_flat(trace)
+    replay_groups = route_trace.replay_groups(batch_union=batch_union)
+    raw_trace = route_trace.flat_requests
+    effective_events = [
+        (group.phase, layer, expert)
+        for group in replay_groups
+        for layer, expert in group.requests
+    ]
+    effective_trace = [(layer, expert) for _, layer, expert in effective_events]
+    if not effective_trace:
+        raise ValueError("trace is empty")
 
     locations = {
         request: locator.locate(*request)
-        for request in set(trace)
+        for request in set(effective_trace)
     }
-
-    trace_hash = hashlib.sha256(
-        json.dumps([[layer, expert] for layer, expert in trace], separators=(",", ":")).encode()
-    ).hexdigest()
     results = []
-    for capacity in capacities:
-        cache = ExpertCache(capacity)
-        read_latencies: list[float] = []
-        io_before = _process_read_bytes()
-        started = time.perf_counter()
-        for layer, expert_id in trace:
-            def load() -> dict[str, bytes]:
-                read_started = time.perf_counter()
-                payloads = read_expert_bytes(locations[(layer, expert_id)])
-                read_latencies.append((time.perf_counter() - read_started) * 1000.0)
-                return payloads
+    with ShardReader() as reader:
+        for capacity, max_bytes in specs:
+            cache = ExpertCache(capacity_per_layer=capacity, max_bytes=max_bytes)
+            read_latencies: list[float] = []
+            phase_metrics: dict[str, dict[str, int]] = defaultdict(
+                lambda: {"requests": 0, "hits": 0, "misses": 0, "loaded_bytes": 0, "logical_bytes": 0}
+            )
+            reader_calls_before = reader.read_calls
+            reader_bytes_before = reader.read_bytes
+            io_before = _process_read_bytes()
+            started = time.perf_counter()
+            for phase, layer, expert_id in effective_events:
+                phase_result = phase_metrics[phase]
+                phase_result["requests"] += 1
+                phase_result["logical_bytes"] += locations[(layer, expert_id)].nbytes
+                hits_before = cache.stats.hits
+                misses_before = cache.stats.misses
+                loaded_before = cache.stats.loaded_bytes
 
-            cache.get_or_load(layer, expert_id, load)
-        elapsed_ms = (time.perf_counter() - started) * 1000.0
-        io_after = _process_read_bytes()
-        stats = cache.stats_dict()
-        results.append(
-            {
-                "capacity_per_layer": capacity,
-                **stats,
-                "logical_bytes": sum(
-                    locations[(layer, expert_id)].nbytes
-                    for layer, expert_id in trace
-                ),
-                "process_read_bytes": (
-                    io_after - io_before
-                    if io_before is not None and io_after is not None
-                    else None
-                ),
-                "wall_time_ms": elapsed_ms,
-                "read_latency_mean_ms": statistics.fmean(read_latencies) if read_latencies else 0.0,
-                "read_latency_p50_ms": _percentile(read_latencies, 50),
-                "read_latency_p95_ms": _percentile(read_latencies, 95),
-            }
-        )
+                def load() -> dict[str, bytes]:
+                    read_started = time.perf_counter()
+                    payloads = read_expert_bytes(locations[(layer, expert_id)], reader)
+                    read_latencies.append((time.perf_counter() - read_started) * 1000.0)
+                    return payloads
+
+                cache.get_or_load(layer, expert_id, load)
+                phase_result["hits"] += cache.stats.hits - hits_before
+                phase_result["misses"] += cache.stats.misses - misses_before
+                phase_result["loaded_bytes"] += cache.stats.loaded_bytes - loaded_before
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            io_after = _process_read_bytes()
+            stats = cache.stats_dict()
+            for phase_result in phase_metrics.values():
+                phase_result["hit_rate"] = (
+                    phase_result["hits"] / phase_result["requests"]
+                    if phase_result["requests"]
+                    else 0.0
+                )
+            results.append(
+                {
+                    "capacity_per_layer": capacity,
+                    "max_bytes": max_bytes,
+                    **stats,
+                    "logical_bytes": sum(
+                        locations[(layer, expert_id)].nbytes
+                        for layer, expert_id in effective_trace
+                    ),
+                    "phase_metrics": dict(phase_metrics),
+                    "reader_read_calls": reader.read_calls - reader_calls_before,
+                    "reader_read_bytes": reader.read_bytes - reader_bytes_before,
+                    "process_read_bytes": (
+                        io_after - io_before
+                        if io_before is not None and io_after is not None
+                        else None
+                    ),
+                    "wall_time_ms": elapsed_ms,
+                    "read_latency_mean_ms": statistics.fmean(read_latencies) if read_latencies else 0.0,
+                    "read_latency_p50_ms": _percentile(read_latencies, 50),
+                    "read_latency_p95_ms": _percentile(read_latencies, 95),
+                }
+            )
 
     return {
         "schema_version": 1,
@@ -171,9 +212,20 @@ def run_expert_benchmark(
             "num_experts": locator.num_experts,
         },
         "trace": {
-            "requests": len(trace),
-            "layers": sorted({layer for layer, _ in trace}),
-            "sha256": trace_hash,
+            "schema_version": route_trace.schema_version,
+            "requests": len(effective_trace),
+            "raw_requests": len(raw_trace),
+            "effective_requests": len(effective_trace),
+            "batch_union_deduped_requests": len(raw_trace) - len(effective_trace),
+            "batch_union": batch_union,
+            "phases": route_trace.phases,
+            "effective_phases": {
+                phase: sum(1 for current_phase, _, _ in effective_events if current_phase == phase)
+                for phase in sorted({current_phase for current_phase, _, _ in effective_events})
+            },
+            "groups": len(route_trace.groups),
+            "layers": route_trace.layers,
+            "sha256": route_trace.source_sha256 or trace_sha256(route_trace),
         },
         "results": results,
     }
@@ -207,19 +259,25 @@ def _percentile(values: list[float], percentile: int) -> float:
 def format_expert_benchmark(result: dict[str, Any], format_bytes) -> str:
     lines = [
         f"SparseFlow expert-bench: {result['model']['path']}",
-        f"trace       {result['trace']['requests']} requests, layers {result['trace']['layers']}",
+        f"trace       {result['trace']['raw_requests']} raw / {result['trace']['effective_requests']} effective requests",
+        f"phases      {result['trace'].get('phases', {})}, batch-union {result['trace'].get('batch_union', False)}",
         f"trace sha   {result['trace']['sha256']}",
         "",
         "capacity  requests  hit-rate  loaded       proc-read   cached      wall-ms  read-p50  read-p95",
     ]
     for item in result["results"]:
+        capacity_label = (
+            str(item["capacity_per_layer"])
+            if item["capacity_per_layer"] is not None
+            else format_bytes(item["max_bytes"])
+        )
         process_read = (
             "n/a"
             if item["process_read_bytes"] is None
             else format_bytes(item["process_read_bytes"])
         )
         lines.append(
-            f"{item['capacity_per_layer']:>8}"
+            f"{capacity_label:>8}"
             f" {item['requests']:>9}"
             f" {item['hit_rate'] * 100:>8.2f}%"
             f" {format_bytes(item['loaded_bytes']):>10}"

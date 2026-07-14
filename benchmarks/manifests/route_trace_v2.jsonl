@@ -1,0 +1,5 @@
+{"id":"zh-moe","group":"chinese","text":"请用一句话解释什么是稀疏专家模型，以及为什么它能减少每个 token 的计算量。"}
+{"id":"en-moe","group":"english","text":"Explain why a sparse mixture-of-experts model can have many total parameters while activating only a small subset for each token."}
+{"id":"code-moe","group":"code","text":"Write a Python function that implements an LRU cache and briefly explain its eviction policy."}
+{"id":"math-moe","group":"math","text":"A model selects 8 experts per token across 40 layers. If one expert is 6 MiB, calculate the theoretical cold read volume for one token."}
+{"id":"conversation-moe","group":"locality","text":"We are continuing the design of a tiered-memory MoE runtime. Compare the tradeoffs between a larger expert cache and more SSD reads."}

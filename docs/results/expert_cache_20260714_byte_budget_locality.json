@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "num_experts": 256
+  },
+  "trace": {
+    "schema_version": 2,
+    "requests": 512,
+    "raw_requests": 512,
+    "effective_requests": 512,
+    "batch_union_deduped_requests": 0,
+    "batch_union": true,
+    "phases": {
+      "synthetic": 512
+    },
+    "effective_phases": {
+      "synthetic": 512
+    },
+    "groups": 512,
+    "layers": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "sha256": "343e3037308510b4519204f0b8eb9213a05750da84e86f3694ca2be815d445ae"
+  },
+  "results": [
+    {
+      "capacity_per_layer": null,
+      "max_bytes": 536870912,
+      "requests": 512,
+      "hits": 262,
+      "misses": 250,
+      "hit_rate": 0.51171875,
+      "evictions": 165,
+      "loaded_bytes": 1572864000,
+      "cached_bytes": 534773760,
+      "cache_entries": 85,
+      "logical_bytes": 3221225472,
+      "phase_metrics": {
+        "synthetic": {
+          "requests": 512,
+          "hits": 262,
+          "misses": 250,
+          "loaded_bytes": 1572864000,
+          "logical_bytes": 3221225472,
+          "hit_rate": 0.51171875
+        }
+      },
+      "reader_read_calls": 500,
+      "reader_read_bytes": 1572864000,
+      "process_read_bytes": 96083968,
+      "wall_time_ms": 1066.0022359998038,
+      "read_latency_mean_ms": 4.1490972799947485,
+      "read_latency_p50_ms": 3.802055000051041,
+      "read_latency_p95_ms": 14.667991999885999
+    },
+    {
+      "capacity_per_layer": null,
+      "max_bytes": 1073741824,
+      "requests": 512,
+      "hits": 384,
+      "misses": 128,
+      "hit_rate": 0.75,
+      "evictions": 0,
+      "loaded_bytes": 805306368,
+      "cached_bytes": 805306368,
+      "cache_entries": 128,
+      "logical_bytes": 3221225472,
+      "phase_metrics": {
+        "synthetic": {
+          "requests": 512,
+          "hits": 384,
+          "misses": 128,
+          "loaded_bytes": 805306368,
+          "logical_bytes": 3221225472,
+          "hit_rate": 0.75
+        }
+      },
+      "reader_read_calls": 256,
+      "reader_read_bytes": 805306368,
+      "process_read_bytes": 0,
+      "wall_time_ms": 472.2505530003218,
+      "read_latency_mean_ms": 3.65580716406555,
+      "read_latency_p50_ms": 3.652541000064957,
+      "read_latency_p95_ms": 3.9881299999251496
+    }
+  ]
+}

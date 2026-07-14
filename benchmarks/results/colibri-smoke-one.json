@@ -148,7 +148,7 @@
     "sha256": "8b0fe16b7636fb7410df08922c0af39f75a727008afeba2fc92c47d7e546c027"
   },
   "load": {
-    "seconds": 380.4858506929995,
+    "seconds": 191.82927798799938,
     "model_load_seconds": 191.82927798799938,
     "materialize_seconds": 188.65657270500014,
     "metrics": {
@@ -164,7 +164,8 @@
       "voluntary_context_switches": 356234,
       "involuntary_context_switches": 51389
     },
-    "physical_resident": true
+    "physical_resident": true,
+    "timing_note": "Corrected legacy result: the previous seconds field double-counted materialize_seconds. New runs record tokenizer/model/materialization phases separately."
   },
   "questions": [
     {
