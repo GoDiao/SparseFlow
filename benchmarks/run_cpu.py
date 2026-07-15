@@ -95,12 +95,16 @@ def greedy_generate_timed(
     if attention_mask is None:
         attention_mask = torch.ones_like(input_ids)
 
+    cache_position = torch.arange(input_ids.shape[-1], device=input_ids.device)
     prefill_start = now()
     with torch.inference_mode():
-        first = model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            use_cache=True,
+        first = _generation_forward(
+            model,
+            input_ids,
+            attention_mask,
+            torch,
+            past_key_values=None,
+            cache_position=cache_position,
         )
         next_token = first.logits[:, -1, :].argmax(dim=-1, keepdim=True)
     prefill_seconds = now() - prefill_start
@@ -116,13 +120,16 @@ def greedy_generate_timed(
         attention_mask = torch.cat(
             [attention_mask, torch.ones_like(next_token)], dim=-1
         )
+        cache_position = cache_position[-1:] + 1
         token_start = now()
         with torch.inference_mode():
-            output = model(
-                input_ids=next_token,
-                attention_mask=attention_mask,
+            output = _generation_forward(
+                model,
+                next_token,
+                attention_mask,
+                torch,
                 past_key_values=past_key_values,
-                use_cache=True,
+                cache_position=cache_position,
             )
             next_token = output.logits[:, -1, :].argmax(dim=-1, keepdim=True)
         decode_token_seconds.append(now() - token_start)
@@ -141,6 +148,39 @@ def greedy_generate_timed(
         "decode_token_seconds": decode_token_seconds,
         "end_to_end_seconds": prefill_seconds + decode_seconds,
     }
+
+
+def _generation_forward(
+    model: Any,
+    input_ids: Any,
+    attention_mask: Any,
+    torch: Any,
+    past_key_values: Any,
+    cache_position: Any,
+) -> Any:
+    """Use the model's generation input contract when it exposes one.
+
+    Multimodal Qwen wrappers require request-local ``cache_position`` and
+    position preparation even for text-only incremental decoding. Calling the
+    raw forward method directly can reuse stale mRoPE state after a warmup.
+    """
+
+    prepare = getattr(model, "prepare_inputs_for_generation", None)
+    if prepare is not None:
+        model_inputs = prepare(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            cache_position=cache_position,
+            use_cache=True,
+        )
+        return model(**model_inputs)
+    return model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        past_key_values=past_key_values,
+        use_cache=True,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -277,11 +317,11 @@ def main(argv: list[str] | None = None) -> int:
     for warmup_index in range(args.warmup):
         row = rows[warmup_index % len(rows)]
         with torch.inference_mode():
-            model.generate(
-                **encoded[row["id"]],
-                max_new_tokens=args.max_new_tokens,
-                do_sample=False,
-                use_cache=True,
+            greedy_generate_timed(
+                model,
+                encoded[row["id"]],
+                args.max_new_tokens,
+                torch,
             )
         print(f"warmup={warmup_index + 1}/{args.warmup}", flush=True)
 

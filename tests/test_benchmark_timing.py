@@ -40,6 +40,50 @@ class BenchmarkTimingTest(unittest.TestCase):
         self.assertGreaterEqual(result["end_to_end_seconds"], result["prefill_seconds"])
         self.assertGreater(result["decode_seconds"], 0)
 
+    def test_generation_prepare_contract_receives_incremental_cache_position(self):
+        class PreparedTinyModel:
+            def __init__(self):
+                self.positions = []
+
+            def prepare_inputs_for_generation(
+                self,
+                input_ids,
+                past_key_values,
+                attention_mask,
+                cache_position,
+                use_cache,
+            ):
+                self.positions.append(cache_position.tolist())
+                return {
+                    "input_ids": input_ids,
+                    "past_key_values": past_key_values,
+                    "attention_mask": attention_mask,
+                    "use_cache": use_cache,
+                }
+
+            def __call__(
+                self,
+                input_ids,
+                attention_mask,
+                use_cache,
+                past_key_values=None,
+            ):
+                logits = torch.zeros((1, input_ids.shape[1], 5))
+                logits[:, -1, 1] = 1
+                return SimpleNamespace(logits=logits, past_key_values=object())
+
+        model = PreparedTinyModel()
+        greedy_generate_timed(
+            model,
+            {
+                "input_ids": torch.tensor([[2, 3]]),
+                "attention_mask": torch.ones((1, 2), dtype=torch.long),
+            },
+            max_new_tokens=3,
+            torch=torch,
+        )
+        self.assertEqual(model.positions, [[0, 1], [2], [3]])
+
 
 if __name__ == "__main__":
     unittest.main()
