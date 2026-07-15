@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future, ThreadPoolExecutor
+from collections import Counter
 from pathlib import Path
 from threading import RLock
 import time
@@ -111,23 +112,37 @@ class CachedExpertProvider:
         torch,
         prefetch_workers: int = 0,
         coalesce_gap: int = 0,
+        prefetch_policy: str = "current-route",
+        prefetch_budget_ratio: float = 0.25,
     ):
         if prefetch_workers < 0:
             raise ValueError("prefetch_workers must be non-negative")
         if coalesce_gap < 0:
             raise ValueError("coalesce_gap must be non-negative")
+        if prefetch_policy not in {"none", "current-route", "previous-token", "hot-set"}:
+            raise ValueError(f"unknown prefetch policy: {prefetch_policy}")
+        if not 0.0 <= prefetch_budget_ratio <= 1.0:
+            raise ValueError("prefetch_budget_ratio must be in [0, 1]")
         self.locator = ExpertLocator(model_dir)
         self.cache = cache
         self.reader = reader
         self.torch = torch
         self.prefetch_workers = prefetch_workers
         self.coalesce_gap = coalesce_gap
+        self.prefetch_policy = prefetch_policy
+        self.prefetch_budget_ratio = prefetch_budget_ratio
+        self._forward = -1
+        self._phase = "unknown"
+        self._prediction_history: list[dict[int, tuple[int, ...]]] = []
         self._decoded: dict[tuple[int, int], tuple[CachedExpert, dict[str, Any]]] = {}
         self._prefetch_lock = RLock()
         self._executor: ThreadPoolExecutor | None = None
         self._inflight: dict[tuple[int, int], Future] = {}
         self._future_keys: dict[Future, tuple[tuple[int, int], ...]] = {}
         self._future_submitted: dict[Future, float] = {}
+        self._future_reasons: dict[Future, str] = {}
+        self._prefetched_ready: dict[tuple[int, int], int] = {}
+        self._transient_ready: dict[tuple[int, int], CachedExpert] = {}
         self._prefetch_metrics = {
             "submitted": 0,
             "batches": 0,
@@ -139,10 +154,29 @@ class CachedExpertProvider:
             "coalesced_ranges": 0,
             "logical_ranges": 0,
             "physical_bytes": 0,
-            "useful_bytes": 0,
+            "hit_bytes": 0,
             "wasted_bytes": 0,
             "read_ms_total": 0.0,
             "wait_ms_total": 0.0,
+            "hits": 0,
+            "late": 0,
+            "dropped": 0,
+            "useful_bytes": 0,
+            "wasted_ready": 0,
+            "wasted_ready_bytes": 0,
+            "current_route_submitted": 0,
+            "previous_token_submitted": 0,
+            "hot_set_submitted": 0,
+            "cancelled": 0,
+        }
+        self._demand_metrics = {
+            "requests": 0,
+            "reuse_hits": 0,
+            "prefetch_served": 0,
+            "misses": 0,
+            "read_calls": 0,
+            "read_bytes": 0,
+            "read_ms_total": 0.0,
         }
 
     def __enter__(self) -> "CachedExpertProvider":
@@ -155,20 +189,49 @@ class CachedExpertProvider:
         key = (layer, expert_id)
         location = self.locator.locate(layer, expert_id)
         with self._prefetch_lock:
-            entry = self.cache.lookup(layer, expert_id)
+            entry = self.cache.lookup(layer, expert_id, expected_nbytes=location.nbytes)
+            transient = self._transient_ready.pop(key, None) if entry is None else None
+            if transient is not None:
+                entry = transient
             future = self._inflight.get(key) if entry is None else None
+            if entry is not None:
+                prefetched = transient is not None or key in self._prefetched_ready
+                self._mark_prefetch_used(
+                    key,
+                    fallback_bytes=transient.nbytes if transient is not None else None,
+                )
+                if prefetched:
+                    self._demand_metrics["prefetch_served"] += 1
+                else:
+                    self._demand_metrics["reuse_hits"] += 1
             if future is not None:
                 self._prefetch_metrics["waits"] += 1
+                self._prefetch_metrics["late"] += 1
+            self._demand_metrics["requests"] += 1
+            if entry is None and future is None:
+                self._demand_metrics["misses"] += 1
 
         if entry is None and future is not None:
             entries = self._consume_future(future)
             entry = entries.get(key)
             if entry is None:
                 raise RuntimeError(f"prefetch completed without expert payload: {key}")
+            with self._prefetch_lock:
+                self._transient_ready.pop(key, None)
+                self._mark_prefetch_used(key, fallback_bytes=entry.nbytes)
+                self._demand_metrics["prefetch_served"] += 1
         elif entry is None:
+            calls_before = self.reader.read_calls
+            bytes_before = self.reader.read_bytes
+            started = time.perf_counter()
             payloads = read_expert_bytes(location, self.reader)
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
             with self._prefetch_lock:
                 entry = self.cache.put_loaded(layer, expert_id, payloads)
+                self._demand_metrics["read_calls"] += self.reader.read_calls - calls_before
+                self._demand_metrics["read_bytes"] += self.reader.read_bytes - bytes_before
+                self._demand_metrics["read_ms_total"] += elapsed_ms
+                self._reconcile_prefetched_ready()
 
         existing = self._decoded.get(key)
         if existing is not None and existing[0] is entry:
@@ -205,6 +268,15 @@ class CachedExpertProvider:
     def prefetch(self, layer: int, expert_ids: list[int] | tuple[int, ...]) -> None:
         """Submit one coalesced read for selected cache-miss experts."""
 
+        self._prefetch(layer, expert_ids, reason="current-route")
+
+    def _prefetch(
+        self,
+        layer: int,
+        expert_ids: list[int] | tuple[int, ...],
+        reason: str,
+    ) -> None:
+
         if self.prefetch_workers <= 0:
             raise RuntimeError("prefetch is disabled; construct provider with prefetch_workers > 0")
         unique_keys = tuple(dict.fromkeys((layer, int(expert_id)) for expert_id in expert_ids))
@@ -215,6 +287,7 @@ class CachedExpertProvider:
                 if key not in live and key not in self._inflight
             )
             if not pending:
+                self._prefetch_metrics["dropped"] += len(unique_keys)
                 return
             locations = tuple(self.locator.locate(*key) for key in pending)
             executor = self._executor
@@ -227,16 +300,96 @@ class CachedExpertProvider:
             )
             self._future_keys[future] = pending
             self._future_submitted[future] = time.perf_counter()
+            self._future_reasons[future] = reason
             for key in pending:
                 self._inflight[key] = future
             self._prefetch_metrics["submitted"] += len(pending)
             self._prefetch_metrics["batches"] += 1
+            metric = reason.replace("-", "_") + "_submitted"
+            if metric in self._prefetch_metrics:
+                self._prefetch_metrics[metric] += len(pending)
 
     def prepare(self, layer: int, expert_ids: tuple[int, ...]) -> None:
         """Prepare selected experts when asynchronous prefetch is enabled."""
 
-        if self.prefetch_workers > 0:
-            self.prefetch(layer, expert_ids)
+        if self.prefetch_workers > 0 and self.prefetch_policy in {
+            "current-route",
+            "previous-token",
+        }:
+            self._prefetch(layer, expert_ids, reason="current-route")
+
+    def begin_forward(self, forward: int, phase: str) -> None:
+        self._forward = forward
+        self._phase = phase
+        with self._prefetch_lock:
+            self.cache.begin_forward(forward, phase)
+            self._reconcile_prefetched_ready()
+
+    def observe_routes(self, layer: int, selected_experts) -> None:
+        values = selected_experts.detach().to(device="cpu").reshape(-1).tolist()
+        counts = Counter(int(value) for value in values)
+        with self._prefetch_lock:
+            self.cache.observe_routes(layer, counts)
+
+    def predict(self, routes_by_layer: dict[int, tuple[int, ...]]) -> None:
+        if self.prefetch_workers <= 0 or self.prefetch_policy in {"none", "current-route"}:
+            return
+        hot_by_layer: dict[int, list[int]] = {}
+        for layer, expert_id in self.cache.policy.hot_keys():
+            hot_by_layer.setdefault(layer, []).append(expert_id)
+        stable_routes: dict[int, tuple[int, ...]] = {}
+        if self.prefetch_policy == "previous-token" and len(self._prediction_history) >= 2:
+            for layer, experts in routes_by_layer.items():
+                previous = set(experts)
+                for history in self._prediction_history:
+                    previous.intersection_update(history.get(layer, ()))
+                stable_routes[layer] = tuple(
+                    expert_id for expert_id in experts if expert_id in previous
+                )
+        if routes_by_layer:
+            self._prediction_history.append(dict(routes_by_layer))
+            self._prediction_history = self._prediction_history[-2:]
+        hot_keys = [
+            (layer, expert_id)
+            for layer in sorted(hot_by_layer)
+            for expert_id in hot_by_layer[layer]
+        ]
+        hot_key_set = set(hot_keys)
+        route_keys = [
+            (layer, expert_id)
+            for layer in sorted(stable_routes)
+            for expert_id in stable_routes[layer]
+            if (layer, expert_id) not in hot_key_set
+        ]
+        candidates = hot_keys if self.prefetch_policy == "hot-set" else hot_keys + route_keys
+        if self.cache.max_bytes is not None:
+            budget = int(self.cache.max_bytes * self.prefetch_budget_ratio)
+        elif self.cache.capacity_per_layer is not None:
+            sample = self.locator.locate(self.locator.layers[0], 0).nbytes
+            budget = int(
+                self.cache.capacity_per_layer
+                * len(self.locator.layers)
+                * sample
+                * self.prefetch_budget_ratio
+            )
+        else:
+            budget = 0
+        selected: dict[int, list[int]] = {}
+        selected_bytes = 0
+        with self._prefetch_lock:
+            live = set(self.cache.cached_keys())
+            inflight = set(self._inflight)
+        for layer, expert_id in candidates:
+            if (layer, expert_id) in live or (layer, expert_id) in inflight:
+                continue
+            nbytes = self.locator.locate(layer, expert_id).nbytes
+            if selected_bytes + nbytes > budget:
+                continue
+            selected.setdefault(layer, []).append(expert_id)
+            selected_bytes += nbytes
+        reason = "hot-set" if self.prefetch_policy == "hot-set" else "previous-token"
+        for layer, expert_ids in selected.items():
+            self._prefetch(layer, tuple(expert_ids), reason=reason)
 
     def _consume_future(self, future: Future) -> dict[tuple[int, int], CachedExpert]:
         try:
@@ -246,6 +399,7 @@ class CachedExpertProvider:
                 self._prefetch_metrics["failed"] += 1
                 keys = self._future_keys.pop(future, ())
                 self._future_submitted.pop(future, None)
+                self._future_reasons.pop(future, None)
                 for key in keys:
                     if self._inflight.get(key) is future:
                         self._inflight.pop(key, None)
@@ -254,13 +408,27 @@ class CachedExpertProvider:
         with self._prefetch_lock:
             keys = self._future_keys.pop(future, ())
             submitted = self._future_submitted.pop(future, time.perf_counter())
+            reason = self._future_reasons.pop(future, "current-route")
             for key in keys:
                 if self._inflight.get(key) is future:
                     self._inflight.pop(key, None)
             entries: dict[tuple[int, int], CachedExpert] = {}
             for key in keys:
-                entry = self.cache.put_loaded(key[0], key[1], payloads[key])
+                entry = self.cache.put_loaded(
+                    key[0],
+                    key[1],
+                    payloads[key],
+                    source=(
+                        "current-route"
+                        if reason == "current-route"
+                        else "prefetch"
+                    ),
+                )
                 entries[key] = entry
+                if self.cache.peek(*key) is entry:
+                    self._prefetched_ready[key] = entry.nbytes
+                else:
+                    self._transient_ready[key] = entry
             self._prefetch_metrics["completed"] += 1
             self._prefetch_metrics["read_ms_total"] += read_ms
             self._prefetch_metrics["wait_ms_total"] += (time.perf_counter() - submitted) * 1000.0
@@ -276,6 +444,7 @@ class CachedExpertProvider:
                 self._prefetch_metrics["physical_bytes"] += batch_stats.physical_bytes
                 self._prefetch_metrics["useful_bytes"] += batch_stats.useful_bytes
                 self._prefetch_metrics["wasted_bytes"] += batch_stats.wasted_bytes
+            self._reconcile_prefetched_ready()
             return entries
 
     def _read_prefetch_batch(self, locations) -> tuple[Any, float]:
@@ -285,23 +454,89 @@ class CachedExpertProvider:
 
     def prefetch_stats(self) -> dict[str, int | float]:
         with self._prefetch_lock:
+            self._reconcile_prefetched_ready()
             return dict(self._prefetch_metrics)
 
+    def finish_generation(self) -> None:
+        """Close predictive accounting without shutting down reusable workers."""
+
+        with self._prefetch_lock:
+            futures = tuple(set(self._inflight.values()))
+        for future in futures:
+            if future.cancel():
+                with self._prefetch_lock:
+                    keys = self._future_keys.pop(future, ())
+                    self._future_submitted.pop(future, None)
+                    self._future_reasons.pop(future, None)
+                    for key in keys:
+                        if self._inflight.get(key) is future:
+                            self._inflight.pop(key, None)
+                    self._prefetch_metrics["cancelled"] += len(keys)
+                continue
+            self._consume_future(future)
+        with self._prefetch_lock:
+            for nbytes in self._prefetched_ready.values():
+                self._prefetch_metrics["wasted_ready"] += 1
+                self._prefetch_metrics["wasted_ready_bytes"] += nbytes
+            for entry in self._transient_ready.values():
+                self._prefetch_metrics["wasted_ready"] += 1
+                self._prefetch_metrics["wasted_ready_bytes"] += entry.nbytes
+            self._prefetched_ready.clear()
+            self._transient_ready.clear()
+
+    def _mark_prefetch_used(
+        self,
+        key: tuple[int, int],
+        fallback_bytes: int | None = None,
+    ) -> None:
+        nbytes = self._prefetched_ready.pop(key, fallback_bytes)
+        if nbytes is not None:
+            self._prefetch_metrics["hits"] += 1
+            self._prefetch_metrics["hit_bytes"] += nbytes
+
+    def _reconcile_prefetched_ready(self) -> None:
+        live = set(self.cache.cached_keys())
+        for key in tuple(self._prefetched_ready):
+            if key not in live:
+                self._prefetch_metrics["wasted_ready"] += 1
+                self._prefetch_metrics["wasted_ready_bytes"] += self._prefetched_ready.pop(key)
+
     def snapshot(self) -> dict[str, Any]:
-        cache = self.cache.stats_dict()
-        return {
-            "backend_id": self.backend_id,
-            "reader_calls": self.reader.read_calls,
-            "reader_bytes": self.reader.read_bytes,
-            "requests": cache["requests"],
-            "cache_hits": cache["hits"],
-            "cache_misses": cache["misses"],
-            "cache_evictions": cache["evictions"],
-            "cached_experts": cache["cache_entries"],
-            "cached_bytes": cache["cached_bytes"],
-            "loaded_bytes": cache["loaded_bytes"],
-            "decoded_entries": self.decoded_entries,
-        }
+        with self._prefetch_lock:
+            cache = self.cache.stats_dict()
+            return {
+                "backend_id": self.backend_id,
+                "reader_calls": self.reader.read_calls,
+                "reader_bytes": self.reader.read_bytes,
+                "requests": cache["requests"],
+                "cache_hits": cache["hits"],
+                "cache_misses": cache["misses"],
+                "cache_evictions": cache["evictions"],
+                "cached_experts": cache["cache_entries"],
+                "cached_bytes": cache["cached_bytes"],
+                "loaded_bytes": cache["loaded_bytes"],
+                "hit_bytes": cache["hit_bytes"],
+                "miss_bytes": cache["miss_bytes"],
+                "admission_rejections": cache["admission_rejections"],
+                "decoded_entries": self.decoded_entries,
+                "transient_prefetch_entries": len(self._transient_ready),
+                "demand_read_calls": self._demand_metrics["read_calls"],
+                "demand_read_bytes": self._demand_metrics["read_bytes"],
+                "demand_read_ms_total": self._demand_metrics["read_ms_total"],
+                "demand_requests": self._demand_metrics["requests"],
+                "demand_reuse_hits": self._demand_metrics["reuse_hits"],
+                "demand_prefetch_served": self._demand_metrics["prefetch_served"],
+                "demand_misses": self._demand_metrics["misses"],
+                "prefetch_submitted": self._prefetch_metrics["submitted"],
+                "prefetch_hits": self._prefetch_metrics["hits"],
+                "prefetch_late": self._prefetch_metrics["late"],
+                "prefetch_hit_bytes": self._prefetch_metrics["hit_bytes"],
+                "prefetch_wasted_ready_bytes": self._prefetch_metrics[
+                    "wasted_ready_bytes"
+                ],
+                "forward": self._forward,
+                "phase": self._phase,
+            }
 
     def storage_report(self) -> dict[str, Any]:
         return {
@@ -309,10 +544,13 @@ class CachedExpertProvider:
             "policy": "routed experts loaded on demand through ExpertCache",
             "preload_read_calls": 0,
             "preload_read_bytes": 0,
+            "prefetch_policy": self.prefetch_policy,
+            "prefetch_budget_ratio": self.prefetch_budget_ratio,
             "prefetch": self.prefetch_stats(),
         }
 
     def close(self) -> None:
+        self.finish_generation()
         executor = self._executor
         if executor is not None:
             executor.shutdown(wait=True)

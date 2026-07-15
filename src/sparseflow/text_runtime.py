@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .cache import ExpertCache
+from .cache_policy import POLICY_VARIANTS, make_cache_policy
 from .expert_provider import (
     ExpertProvider,
     ResidentExpertProvider,
@@ -22,6 +23,7 @@ from .memory_loader import (
     peak_rss_bytes,
 )
 from .moe_probe import run_routed_experts
+from .telemetry import RuntimeTelemetry
 
 
 RUNTIME_ID = "qwen36-text-memory-native-v1"
@@ -51,35 +53,62 @@ class RouteAudit:
     def record(self, layer: int, selected_experts) -> None:
         values = selected_experts.detach().to(device="cpu").contiguous()
         raw = values.numpy().tobytes()
+        expert_ids = tuple(int(value) for value in values.unique(sorted=True).tolist())
         self.records.append(
             {
                 "ordinal": len(self.records),
                 "layer": layer,
                 "shape": list(values.shape),
                 "sha256": hashlib.sha256(raw).hexdigest(),
-                "unique_experts": int(values.unique().numel()),
+                "unique_experts": len(expert_ids),
+                "expert_ids": list(expert_ids),
             }
         )
+
+    def routes_since(self, start: int) -> dict[int, tuple[int, ...]]:
+        result: dict[int, tuple[int, ...]] = {}
+        for record in self.records[start:]:
+            result[int(record["layer"])] = tuple(int(value) for value in record["expert_ids"])
+        return result
 
 
 class SparseFlowQwenExperts(_Module):
     """Transformers-compatible routed-expert module backed by SparseFlow."""
 
-    def __init__(self, layer: int, provider: ExpertProvider, route_audit: RouteAudit):
+    def __init__(
+        self,
+        layer: int,
+        provider: ExpertProvider,
+        route_audit: RouteAudit,
+        telemetry: RuntimeTelemetry | None = None,
+    ):
         super().__init__()
         self.layer = layer
         self.provider = provider
         self.route_audit = route_audit
+        self.telemetry = telemetry or RuntimeTelemetry("none")
 
     def forward(self, hidden_states, top_k_index, top_k_weights):
         self.route_audit.record(self.layer, top_k_index)
-        return run_routed_experts(
+        self.provider.observe_routes(self.layer, top_k_index)
+        before = self.provider.snapshot()
+        started = time.perf_counter()
+        result = run_routed_experts(
             hidden_states,
             top_k_index,
             top_k_weights,
             lambda expert_id: self.provider.get(self.layer, expert_id),
             prepare_routed=lambda expert_ids: self.provider.prepare(self.layer, expert_ids),
         )
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        self.telemetry.record_layer(
+            self.layer,
+            top_k_index,
+            before,
+            self.provider.snapshot(),
+            elapsed_ms,
+        )
+        return result
 
 
 class Qwen36TextRuntime:
@@ -105,6 +134,7 @@ class Qwen36TextRuntime:
         cache: ExpertCache | None = None,
         provider: ExpertProvider | None = None,
         route_audit: RouteAudit | None = None,
+        telemetry: RuntimeTelemetry | None = None,
         prefetch_workers: int = 0,
         experts_implementation: str = "eager",
         load_mode: str = "transformers",
@@ -121,6 +151,7 @@ class Qwen36TextRuntime:
         self.cache = cache
         self.provider = provider
         self.route_audit = route_audit
+        self.telemetry = telemetry or RuntimeTelemetry("none")
         self.prefetch_workers = prefetch_workers
         self.experts_implementation = experts_implementation
         self.load_mode = load_mode
@@ -137,6 +168,11 @@ class Qwen36TextRuntime:
         cache_bytes: int | None = None,
         prefetch_workers: int = 0,
         coalesce_gap: int = 0,
+        cache_policy: str = "lru",
+        prefetch_policy: str = "current-route",
+        prefetch_budget_ratio: float = 0.25,
+        hot_ratio: float = 0.25,
+        telemetry_level: str = "summary",
         experts_implementation: str | None = None,
         load_mode: str = "transformers",
     ) -> "Qwen36TextRuntime":
@@ -159,6 +195,10 @@ class Qwen36TextRuntime:
             raise ValueError("SparseFlow streaming currently implements eager expert arithmetic")
         if load_mode == "memory-native" and mode == "resident" and prefetch_workers:
             raise ValueError("resident expert backend does not support prefetch workers")
+        if not 0.0 <= hot_ratio <= 1.0:
+            raise ValueError("hot_ratio must be in [0, 1]")
+        if not 0.0 <= prefetch_budget_ratio <= 1.0:
+            raise ValueError("prefetch_budget_ratio must be in [0, 1]")
         if device_map is None:
             device_map = {"": "cpu"}
         tokenizer = AutoTokenizer.from_pretrained(
@@ -176,7 +216,15 @@ class Qwen36TextRuntime:
                 if mode == "streaming":
                     if cache_slots is None and cache_bytes is None:
                         cache_slots = 16
-                    cache = ExpertCache(capacity_per_layer=cache_slots, max_bytes=cache_bytes)
+                    policy = make_cache_policy(
+                        cache_policy,
+                        _max_hot_entries(root, cache_slots, cache_bytes, hot_ratio),
+                    )
+                    cache = ExpertCache(
+                        capacity_per_layer=cache_slots,
+                        max_bytes=cache_bytes,
+                        policy=policy,
+                    )
                     provider = StreamingExpertProvider(
                         root,
                         cache,
@@ -184,16 +232,20 @@ class Qwen36TextRuntime:
                         torch,
                         prefetch_workers=prefetch_workers,
                         coalesce_gap=coalesce_gap,
+                        prefetch_policy=prefetch_policy,
+                        prefetch_budget_ratio=prefetch_budget_ratio,
                     )
                 else:
                     provider = ResidentExpertProvider(root, reader, torch)
                 route_audit = RouteAudit()
+                telemetry = RuntimeTelemetry(telemetry_level)
                 build = build_qwen36_meta_text_model(
                     root,
                     expert_factory=lambda layer: SparseFlowQwenExperts(
                         layer,
                         provider,
                         route_audit,
+                        telemetry,
                     ),
                 )
                 materialized = materialize_qwen36_text_model(build, dtype=dtype)
@@ -217,6 +269,7 @@ class Qwen36TextRuntime:
                 cache=cache,
                 provider=provider,
                 route_audit=route_audit,
+                telemetry=telemetry,
                 prefetch_workers=prefetch_workers,
                 experts_implementation="eager",
                 load_mode="memory-native",
@@ -258,7 +311,15 @@ class Qwen36TextRuntime:
         if cache_slots is None and cache_bytes is None:
             cache_slots = 16
         reader = ShardReader()
-        cache = ExpertCache(capacity_per_layer=cache_slots, max_bytes=cache_bytes)
+        policy = make_cache_policy(
+            cache_policy,
+            _max_hot_entries(root, cache_slots, cache_bytes, hot_ratio),
+        )
+        cache = ExpertCache(
+            capacity_per_layer=cache_slots,
+            max_bytes=cache_bytes,
+            policy=policy,
+        )
         provider = StreamingExpertProvider(
             root,
             cache,
@@ -266,9 +327,12 @@ class Qwen36TextRuntime:
             torch,
             prefetch_workers=prefetch_workers,
             coalesce_gap=coalesce_gap,
+            prefetch_policy=prefetch_policy,
+            prefetch_budget_ratio=prefetch_budget_ratio,
         )
         route_audit = RouteAudit()
-        cls._attach_sparseflow_experts(model, provider, route_audit)
+        telemetry = RuntimeTelemetry(telemetry_level)
+        cls._attach_sparseflow_experts(model, provider, route_audit, telemetry)
         return cls(
             model,
             tokenizer,
@@ -279,6 +343,7 @@ class Qwen36TextRuntime:
             cache=cache,
             provider=provider,
             route_audit=route_audit,
+            telemetry=telemetry,
             prefetch_workers=prefetch_workers,
             experts_implementation="eager",
             load_mode="transformers",
@@ -290,6 +355,7 @@ class Qwen36TextRuntime:
         model,
         provider: ExpertProvider,
         route_audit: RouteAudit,
+        telemetry: RuntimeTelemetry,
     ) -> None:
         language_model = model.model
         layers = (
@@ -302,6 +368,7 @@ class Qwen36TextRuntime:
                 layer_index,
                 provider,
                 route_audit,
+                telemetry,
             )
 
     @staticmethod
@@ -370,6 +437,7 @@ class Qwen36TextRuntime:
         rss_before_prefill = current_rss_bytes()
         storage_before_prefill = self.provider.snapshot() if self.provider is not None else None
         route_start = len(self.route_audit.records) if self.route_audit is not None else 0
+        self._begin_forward(0, "prefill", int(input_ids.shape[-1]) - 1)
 
         prefill_started = time.perf_counter()
         first = self.prefill(inputs)
@@ -386,11 +454,22 @@ class Qwen36TextRuntime:
         eos_id = getattr(self.tokenizer, "eos_token_id", None)
         decode_durations: list[float] = []
         decode_storage: list[dict[str, Any]] = []
+        previous_decode_routes: dict[int, tuple[int, ...]] = {}
 
-        for _ in range(1, max_new_tokens):
+        for forward_index in range(1, max_new_tokens):
             attention_mask = self.torch.cat(
                 [attention_mask, self.torch.ones_like(next_token)],
                 dim=-1,
+            )
+            self._begin_forward(
+                forward_index,
+                "decode",
+                int(input_ids.shape[-1]) + forward_index - 1,
+            )
+            if self.provider is not None:
+                self.provider.predict(previous_decode_routes)
+            decode_route_start = (
+                len(self.route_audit.records) if self.route_audit is not None else 0
             )
             started = time.perf_counter()
             output = self.decode(next_token, attention_mask, past)
@@ -404,6 +483,8 @@ class Qwen36TextRuntime:
                     _logit_fingerprint(output.logits[:, -1, :], self.torch)
                 )
             past = getattr(output, "past_key_values", None)
+            if self.route_audit is not None:
+                previous_decode_routes = self.route_audit.routes_since(decode_route_start)
             if stop_on_eos and eos_id is not None and bool((next_token == eos_id).all()):
                 break
 
@@ -413,11 +494,16 @@ class Qwen36TextRuntime:
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )
+        finalize_started = time.perf_counter()
+        if self.provider is not None:
+            self.provider.finish_generation()
+        prefetch_finalize_seconds = time.perf_counter() - finalize_started
         storage_after_generation = self.provider.snapshot() if self.provider is not None else None
         route_records = (
             self.route_audit.records[route_start:] if self.route_audit is not None else None
         )
         return {
+            "agent": "Main Dev",
             "mode": self.mode,
             "expert_backend": (
                 self.provider.backend_id if self.provider is not None else "transformers-resident"
@@ -438,6 +524,7 @@ class Qwen36TextRuntime:
             "prefill_seconds": prefill_seconds,
             "decode_seconds": sum(decode_durations),
             "decode_token_seconds": decode_durations,
+            "prefetch_finalize_seconds": prefetch_finalize_seconds,
             "logit_fingerprints": logit_fingerprints,
             "cache": self.cache.stats_dict() if self.cache is not None else None,
             "prefetch": self.provider.prefetch_stats() if self.provider is not None else None,
@@ -449,6 +536,7 @@ class Qwen36TextRuntime:
                 "after_generation": storage_after_generation,
             },
             "route_audit": route_records,
+            "telemetry": self.telemetry.as_dict(),
             "loader": self.loader_report,
             "memory": {
                 "rss_before_prefill": rss_before_prefill,
@@ -456,6 +544,16 @@ class Qwen36TextRuntime:
                 "process_peak_rss": peak_rss_bytes(),
             },
         }
+
+    def _begin_forward(
+        self,
+        forward: int,
+        phase: str,
+        token_position: int | None,
+    ) -> None:
+        if self.provider is not None:
+            self.provider.begin_forward(forward, phase)
+        self.telemetry.begin_forward(forward, phase, token_position)
 
     def close(self) -> None:
         if self.provider is not None:
@@ -470,6 +568,26 @@ class Qwen36TextRuntime:
         self.close()
 
 
+def _max_hot_entries(
+    model_dir: Path,
+    cache_slots: int | None,
+    cache_bytes: int | None,
+    hot_ratio: float,
+) -> int:
+    if hot_ratio <= 0.0:
+        return 0
+    locator = ExpertLocator(model_dir)
+    if cache_bytes is not None:
+        first_layer = locator.layers[0]
+        expert_bytes = locator.locate(first_layer, 0).nbytes
+        total_entries = cache_bytes // expert_bytes
+    elif cache_slots is not None:
+        total_entries = cache_slots * len(locator.layers)
+    else:
+        total_entries = 0
+    return max(0, int(total_entries * hot_ratio))
+
+
 def compare_text_paths(
     model_dir: str | Path,
     prompt: str,
@@ -480,6 +598,11 @@ def compare_text_paths(
     prefetch_workers: int = 0,
     coalesce_gap: int = 0,
     streaming_load_mode: str = "transformers",
+    cache_policy: str = "lru",
+    prefetch_policy: str = "current-route",
+    prefetch_budget_ratio: float = 0.25,
+    hot_ratio: float = 0.25,
+    telemetry_level: str = "summary",
 ) -> dict[str, Any]:
     """Run resident and streaming text generation as a reproducible gate.
 
@@ -517,6 +640,11 @@ def compare_text_paths(
         coalesce_gap=coalesce_gap,
         experts_implementation="eager",
         load_mode=streaming_load_mode,
+        cache_policy=cache_policy,
+        prefetch_policy=prefetch_policy,
+        prefetch_budget_ratio=prefetch_budget_ratio,
+        hot_ratio=hot_ratio,
+        telemetry_level=telemetry_level,
     )
     comparison = compare_generation_results(resident, streaming)
     return {
@@ -564,6 +692,11 @@ def compare_sparseflow_runtime_paths(
     cache_bytes: int | None = None,
     prefetch_workers: int = 0,
     coalesce_gap: int = 0,
+    cache_policy: str = "lru",
+    prefetch_policy: str = "current-route",
+    prefetch_budget_ratio: float = 0.25,
+    hot_ratio: float = 0.25,
+    telemetry_level: str = "summary",
 ) -> dict[str, Any]:
     """Compare C3-R and C3-S with one memory-native runtime and expert kernel."""
 
@@ -595,6 +728,11 @@ def compare_sparseflow_runtime_paths(
         cache_bytes=cache_bytes,
         prefetch_workers=prefetch_workers,
         coalesce_gap=coalesce_gap,
+        cache_policy=cache_policy,
+        prefetch_policy=prefetch_policy,
+        prefetch_budget_ratio=prefetch_budget_ratio,
+        hot_ratio=hot_ratio,
+        telemetry_level=telemetry_level,
         experts_implementation="eager",
         load_mode="memory-native",
     )
@@ -658,6 +796,10 @@ def compare_sparseflow_runtime_paths(
             "max_bytes": cache_bytes,
             "prefetch_workers": prefetch_workers,
             "coalesce_gap": coalesce_gap,
+            "cache_policy": cache_policy,
+            "prefetch_policy": prefetch_policy,
+            "prefetch_budget_ratio": prefetch_budget_ratio,
+            "hot_ratio": hot_ratio,
         },
         "expected": {
             "layers": expected_layers,
@@ -686,6 +828,122 @@ def compare_sparseflow_runtime_paths(
             "C3-R and C3-S use the same text-only memory-native model, "
             "SparseFlow expert module, dispatch order, eager BF16 kernel, KV cache, "
             "and greedy generation loop; only the expert provider differs."
+        ),
+    }
+
+
+def compare_sparseflow_policy_paths(
+    model_dir: str | Path,
+    prompt: str,
+    max_new_tokens: int = 8,
+    cache_bytes: int = 4 * 1024**3,
+    variants: tuple[str, ...] = tuple(POLICY_VARIANTS),
+    prefetch_workers: int = 2,
+    prefetch_budget_ratio: float = 0.10,
+    hot_ratio: float = 0.25,
+    telemetry_level: str = "summary",
+) -> dict[str, Any]:
+    """Validate all Stage 7.3 policies against one memory-native C3-R run."""
+
+    if not prompt.strip():
+        raise ValueError("prompt must not be empty")
+    if max_new_tokens < 2:
+        raise ValueError("Stage 7.3 policy-check requires at least two generated tokens")
+    if cache_bytes <= 0:
+        raise ValueError("Stage 7.3 policy-check requires a positive cache byte budget")
+    unknown = sorted(set(variants) - set(POLICY_VARIANTS))
+    if unknown:
+        raise ValueError(f"unknown Stage 7.3 policy variants: {unknown}")
+
+    root = Path(model_dir).expanduser().resolve()
+    resident, resident_load_seconds = _run_text_path(
+        root,
+        prompt,
+        max_new_tokens,
+        mode="resident",
+        dtype="bf16",
+        experts_implementation="eager",
+        load_mode="memory-native",
+        telemetry_level=telemetry_level,
+    )
+    gc.collect()
+    results = []
+    for variant in variants:
+        config = POLICY_VARIANTS[variant]
+        workers = prefetch_workers if config["prefetch_policy"] != "none" else 0
+        streaming, load_seconds = _run_text_path(
+            root,
+            prompt,
+            max_new_tokens,
+            mode="streaming",
+            dtype="bf16",
+            cache_slots=None,
+            cache_bytes=cache_bytes,
+            prefetch_workers=workers,
+            cache_policy=config["cache_policy"],
+            prefetch_policy=config["prefetch_policy"],
+            prefetch_budget_ratio=prefetch_budget_ratio,
+            hot_ratio=hot_ratio,
+            telemetry_level=telemetry_level,
+            experts_implementation="eager",
+            load_mode="memory-native",
+        )
+        correctness = compare_generation_results(resident, streaming)
+        correctness["route_audit_equal"] = resident["route_audit"] == streaming["route_audit"]
+        correctness["runtime_identity_equal"] = (
+            resident["runtime_identity"] == streaming["runtime_identity"]
+        )
+        provider = streaming["provider_storage"]
+        demand_accounted = provider["demand_requests"] == (
+            provider["demand_reuse_hits"]
+            + provider["demand_prefetch_served"]
+            + provider["demand_misses"]
+        )
+        prefetch = streaming["prefetch"]
+        invariants = {
+            "full_generation_exact": correctness["all_equal"],
+            "route_audit_exact": correctness["route_audit_equal"],
+            "runtime_identity_exact": correctness["runtime_identity_equal"],
+            "streaming_init_zero_expert_io": (
+                streaming["loader"]["expert_reader_calls_after_init"] == 0
+                and streaming["loader"]["expert_reader_bytes_after_init"] == 0
+            ),
+            "cache_budget_respected": provider["cached_bytes"] <= cache_bytes,
+            "demand_accounting_exact": demand_accounted,
+            "prefetch_failures_zero": prefetch["failed"] == 0,
+        }
+        results.append(
+            {
+                "variant": variant,
+                **config,
+                "prefetch_workers": workers,
+                "load_seconds": load_seconds,
+                "streaming": streaming,
+                "correctness": correctness,
+                "invariants": invariants,
+                "all_invariants_pass": all(invariants.values()),
+            }
+        )
+        gc.collect()
+
+    return {
+        "schema_version": 1,
+        "kind": "qwen3_5_stage7_3_policy_correctness",
+        "stage": "7.3",
+        "agent": "Main Dev",
+        "model": str(root),
+        "prompt": prompt,
+        "max_new_tokens": max_new_tokens,
+        "cache_bytes": cache_bytes,
+        "hot_ratio": hot_ratio,
+        "prefetch_budget_ratio": prefetch_budget_ratio,
+        "runtime_identity": resident["runtime_identity"],
+        "resident": {**resident, "load_seconds": resident_load_seconds},
+        "variants": results,
+        "all_invariants_pass": all(item["all_invariants_pass"] for item in results),
+        "boundary": (
+            "All variants use fresh streaming runtimes and compare against one C3-R run; "
+            "only cache/admission/prefetch policy changes."
         ),
     }
 
@@ -737,6 +995,11 @@ def _run_text_path(
     coalesce_gap: int = 0,
     experts_implementation: str | None = None,
     load_mode: str = "transformers",
+    cache_policy: str = "lru",
+    prefetch_policy: str = "current-route",
+    prefetch_budget_ratio: float = 0.25,
+    hot_ratio: float = 0.25,
+    telemetry_level: str = "summary",
 ) -> tuple[dict[str, Any], float]:
     load_started = time.perf_counter()
     runtime = Qwen36TextRuntime.from_pretrained(
@@ -749,6 +1012,11 @@ def _run_text_path(
         coalesce_gap=coalesce_gap,
         experts_implementation=experts_implementation,
         load_mode=load_mode,
+        cache_policy=cache_policy,
+        prefetch_policy=prefetch_policy,
+        prefetch_budget_ratio=prefetch_budget_ratio,
+        hot_ratio=hot_ratio,
+        telemetry_level=telemetry_level,
     )
     load_seconds = time.perf_counter() - load_started
     try:

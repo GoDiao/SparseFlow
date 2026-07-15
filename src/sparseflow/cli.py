@@ -16,6 +16,7 @@ from .benchmark import (
     run_expert_benchmark,
 )
 from .bytes import format_bytes
+from .cache_policy import POLICY_VARIANTS
 from .loader import load_expert_raw
 from .locator import ExpertLocator
 from .memory_loader import (
@@ -27,10 +28,12 @@ from .moe_probe import compare_expert_paths, compare_moe_cache_paths, compare_mo
 from .moe_runtime import compare_multilayer_moe_paths
 from .text_runtime import (
     Qwen36TextRuntime,
+    compare_sparseflow_policy_paths,
     compare_sparseflow_runtime_paths,
     compare_text_paths,
 )
 from .plan import build_plan
+from .policy_benchmark import discover_trace_paths, run_policy_sweep
 from .route_trace import (
     capture_route_trace,
     capture_route_traces,
@@ -109,6 +112,24 @@ def main(argv: list[str] | None = None) -> int:
     bench_p.add_argument("--batch-union", action="store_true", help="Deduplicate experts within each forward/layer group.")
     bench_p.add_argument("--output", help="Write the machine-readable result JSON to this path.")
     bench_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    policy_sweep_p = sub.add_parser(
+        "policy-sweep",
+        help="Replay real route traces across Stage 7.3 cache/prefetch policies.",
+    )
+    policy_sweep_p.add_argument("model")
+    policy_sweep_p.add_argument(
+        "--trace-dir",
+        action="append",
+        required=True,
+        help="Directory containing route-trace v2 JSON; repeat for multiple lengths.",
+    )
+    policy_sweep_p.add_argument("--byte-budgets", default="1GiB,2GiB,4GiB,8GiB")
+    policy_sweep_p.add_argument("--variants", default=",".join(POLICY_VARIANTS))
+    policy_sweep_p.add_argument("--hot-ratio", type=float, default=0.25)
+    policy_sweep_p.add_argument("--prefetch-budget-ratio", type=float, default=0.25)
+    policy_sweep_p.add_argument("--output", help="Write sweep JSON to this path.")
+    policy_sweep_p.add_argument("--json", action="store_true")
 
     route_p = sub.add_parser(
         "route-trace",
@@ -212,6 +233,20 @@ def main(argv: list[str] | None = None) -> int:
     text_p.add_argument("--cache-bytes", help="Global byte budget, e.g. 4GiB.")
     text_p.add_argument("--prefetch-workers", type=int, default=0)
     text_p.add_argument("--coalesce-gap", type=int, default=0)
+    text_p.add_argument("--cache-policy", choices=("none", "lru", "hot", "heat"), default="lru")
+    text_p.add_argument(
+        "--prefetch-policy",
+        choices=("none", "current-route", "previous-token", "hot-set"),
+        default="current-route",
+    )
+    text_p.add_argument("--hot-ratio", type=float, default=0.25)
+    text_p.add_argument("--prefetch-budget-ratio", type=float, default=0.25)
+    text_p.add_argument(
+        "--telemetry-level",
+        choices=("none", "summary", "layer"),
+        default="summary",
+    )
+    text_p.add_argument("--telemetry-output", help="Write forward/layer telemetry as JSONL.")
     text_p.add_argument("--output", help="Write generation JSON to this path.")
     text_p.add_argument("--json", action="store_true")
 
@@ -232,6 +267,23 @@ def main(argv: list[str] | None = None) -> int:
     text_check_p.add_argument("--cache-bytes", help="Global byte budget, e.g. 4GiB.")
     text_check_p.add_argument("--prefetch-workers", type=int, default=0)
     text_check_p.add_argument("--coalesce-gap", type=int, default=0)
+    text_check_p.add_argument(
+        "--cache-policy",
+        choices=("none", "lru", "hot", "heat"),
+        default="lru",
+    )
+    text_check_p.add_argument(
+        "--prefetch-policy",
+        choices=("none", "current-route", "previous-token", "hot-set"),
+        default="current-route",
+    )
+    text_check_p.add_argument("--hot-ratio", type=float, default=0.25)
+    text_check_p.add_argument("--prefetch-budget-ratio", type=float, default=0.25)
+    text_check_p.add_argument(
+        "--telemetry-level",
+        choices=("none", "summary", "layer"),
+        default="summary",
+    )
     text_check_p.add_argument("--output", help="Write comparison JSON to this path.")
     text_check_p.add_argument("--json", action="store_true")
 
@@ -247,8 +299,45 @@ def main(argv: list[str] | None = None) -> int:
     runtime_check_p.add_argument("--cache-bytes", help="Global byte budget, e.g. 4GiB.")
     runtime_check_p.add_argument("--prefetch-workers", type=int, default=0)
     runtime_check_p.add_argument("--coalesce-gap", type=int, default=0)
+    runtime_check_p.add_argument(
+        "--cache-policy",
+        choices=("none", "lru", "hot", "heat"),
+        default="lru",
+    )
+    runtime_check_p.add_argument(
+        "--prefetch-policy",
+        choices=("none", "current-route", "previous-token", "hot-set"),
+        default="current-route",
+    )
+    runtime_check_p.add_argument("--hot-ratio", type=float, default=0.25)
+    runtime_check_p.add_argument("--prefetch-budget-ratio", type=float, default=0.25)
+    runtime_check_p.add_argument(
+        "--telemetry-level",
+        choices=("none", "summary", "layer"),
+        default="summary",
+    )
     runtime_check_p.add_argument("--output", help="Write comparison JSON to this path.")
     runtime_check_p.add_argument("--json", action="store_true")
+
+    policy_check_p = sub.add_parser(
+        "policy-check",
+        help="Compare Stage 7.3 S0-S4 policies against one memory-native C3-R run.",
+    )
+    policy_check_p.add_argument("model")
+    policy_check_p.add_argument("--prompt", required=True)
+    policy_check_p.add_argument("--max-new-tokens", type=int, default=8)
+    policy_check_p.add_argument("--cache-bytes", default="4GiB")
+    policy_check_p.add_argument("--variants", default=",".join(POLICY_VARIANTS))
+    policy_check_p.add_argument("--prefetch-workers", type=int, default=2)
+    policy_check_p.add_argument("--prefetch-budget-ratio", type=float, default=0.10)
+    policy_check_p.add_argument("--hot-ratio", type=float, default=0.25)
+    policy_check_p.add_argument(
+        "--telemetry-level",
+        choices=("none", "summary", "layer"),
+        default="summary",
+    )
+    policy_check_p.add_argument("--output")
+    policy_check_p.add_argument("--json", action="store_true")
 
     args = parser.parse_args(argv)
     try:
@@ -323,6 +412,26 @@ def main(argv: list[str] | None = None) -> int:
                 output.write_text(encoded + "\n", encoding="utf-8")
             print(encoded if args.json else format_expert_benchmark(result, format_bytes))
             return 0
+        if args.command == "policy-sweep":
+            variants = tuple(item.strip() for item in args.variants.split(",") if item.strip())
+            unknown = sorted(set(variants) - set(POLICY_VARIANTS))
+            if unknown:
+                raise ValueError(f"unknown policy variants: {unknown}")
+            result = run_policy_sweep(
+                args.model,
+                discover_trace_paths(args.trace_dir),
+                parse_byte_budgets(args.byte_budgets),
+                variants=variants,
+                hot_ratio=args.hot_ratio,
+                prefetch_budget_ratio=args.prefetch_budget_ratio,
+            )
+            encoded = json.dumps(result, indent=2, ensure_ascii=False)
+            if args.output:
+                output = Path(args.output).expanduser()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(encoded + "\n", encoding="utf-8")
+            print(encoded if args.json else _format_policy_sweep(result))
+            return 0 if result["all_invariants_pass"] else 1
         if args.command == "route-trace":
             result = capture_route_trace(args.model, args.prompt, args.max_new_tokens)
             write_route_trace(args.output, result)
@@ -407,7 +516,9 @@ def main(argv: list[str] | None = None) -> int:
                 else args.mode
             )
             load_mode = "memory-native" if args.expert_backend else args.load_mode
-            cache_slots = args.cache_slots if mode == "streaming" else None
+            cache_slots = (
+                None if cache_bytes is not None else args.cache_slots
+            ) if mode == "streaming" else None
             with Qwen36TextRuntime.from_pretrained(
                 args.model,
                 mode=mode,
@@ -418,6 +529,11 @@ def main(argv: list[str] | None = None) -> int:
                 coalesce_gap=args.coalesce_gap,
                 experts_implementation=args.experts_implementation,
                 load_mode=load_mode,
+                cache_policy=args.cache_policy,
+                prefetch_policy=args.prefetch_policy,
+                prefetch_budget_ratio=args.prefetch_budget_ratio,
+                hot_ratio=args.hot_ratio,
+                telemetry_level=args.telemetry_level,
             ) as runtime:
                 result = runtime.greedy_generate(
                     args.prompt,
@@ -428,6 +544,8 @@ def main(argv: list[str] | None = None) -> int:
                 output = Path(args.output).expanduser()
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_text(encoded + "\n", encoding="utf-8")
+            if args.telemetry_output:
+                _write_telemetry_jsonl(args.telemetry_output, result["telemetry"])
             print(encoded if args.json else _format_text_generate(result))
             return 0
         if args.command == "text-check":
@@ -437,10 +555,15 @@ def main(argv: list[str] | None = None) -> int:
                 prompt=args.prompt,
                 max_new_tokens=args.max_new_tokens,
                 dtype=args.dtype,
-                cache_slots=args.cache_slots,
+                cache_slots=None if cache_bytes is not None else args.cache_slots,
                 cache_bytes=cache_bytes,
                 prefetch_workers=args.prefetch_workers,
                 coalesce_gap=args.coalesce_gap,
+                cache_policy=args.cache_policy,
+                prefetch_policy=args.prefetch_policy,
+                prefetch_budget_ratio=args.prefetch_budget_ratio,
+                hot_ratio=args.hot_ratio,
+                telemetry_level=args.telemetry_level,
                 streaming_load_mode=args.streaming_loader,
             )
             encoded = json.dumps(result, indent=2, ensure_ascii=False)
@@ -457,10 +580,15 @@ def main(argv: list[str] | None = None) -> int:
                 prompt=args.prompt,
                 max_new_tokens=args.max_new_tokens,
                 dtype=args.dtype,
-                cache_slots=args.cache_slots,
+                cache_slots=None if cache_bytes is not None else args.cache_slots,
                 cache_bytes=cache_bytes,
                 prefetch_workers=args.prefetch_workers,
                 coalesce_gap=args.coalesce_gap,
+                cache_policy=args.cache_policy,
+                prefetch_policy=args.prefetch_policy,
+                prefetch_budget_ratio=args.prefetch_budget_ratio,
+                hot_ratio=args.hot_ratio,
+                telemetry_level=args.telemetry_level,
             )
             encoded = json.dumps(result, indent=2, ensure_ascii=False)
             if args.output:
@@ -468,6 +596,26 @@ def main(argv: list[str] | None = None) -> int:
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_text(encoded + "\n", encoding="utf-8")
             print(encoded if args.json else _format_runtime_check(result))
+            return 0 if result["all_invariants_pass"] else 1
+        if args.command == "policy-check":
+            variants = tuple(item.strip() for item in args.variants.split(",") if item.strip())
+            result = compare_sparseflow_policy_paths(
+                args.model,
+                prompt=args.prompt,
+                max_new_tokens=args.max_new_tokens,
+                cache_bytes=_parse_single_byte_budget(args.cache_bytes),
+                variants=variants,
+                prefetch_workers=args.prefetch_workers,
+                prefetch_budget_ratio=args.prefetch_budget_ratio,
+                hot_ratio=args.hot_ratio,
+                telemetry_level=args.telemetry_level,
+            )
+            encoded = json.dumps(result, indent=2, ensure_ascii=False)
+            if args.output:
+                output = Path(args.output).expanduser()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(encoded + "\n", encoding="utf-8")
+            print(encoded if args.json else _format_policy_check(result))
             return 0 if result["all_invariants_pass"] else 1
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         parser.exit(2, f"sparseflow: error: {exc}\n")
@@ -741,3 +889,51 @@ def _format_runtime_check(result: dict[str, Any]) -> str:
             f"invariants   {result['invariants']}",
         ]
     )
+
+
+def _format_policy_sweep(result: dict[str, Any]) -> str:
+    lines = [
+        f"SparseFlow Stage 7.3 policy-sweep: {result['trace_count']} traces",
+        "variant  budget      hit-rate  demand-read/fwd  total-read/fwd  prefetch-hit  prefetch-waste",
+    ]
+    for item in result["summary"]:
+        lines.append(
+            f"{item['variant']:>7}  {format_bytes(item['max_bytes']):>10}"
+            f"  {item['hit_rate'] * 100:>7.2f}%"
+            f"  {format_bytes(item['decode_demand_read_bytes_per_forward']):>15}"
+            f"  {format_bytes(item['decode_read_bytes_per_forward']):>14}"
+            f"  {format_bytes(item['prefetch_hit_bytes']):>12}"
+            f"  {format_bytes(item['prefetch_wasted_bytes']):>14}"
+        )
+    return "\n".join(lines)
+
+
+def _format_policy_check(result: dict[str, Any]) -> str:
+    lines = [
+        "SparseFlow Stage 7.3 policy-check",
+        f"resident IDs {result['resident']['generated_ids']}",
+        "variant  exact  reuse-hit  prefetched  demand-miss  read-bytes  decode-seconds",
+    ]
+    for item in result["variants"]:
+        streaming = item["streaming"]
+        provider = streaming["provider_storage"]
+        lines.append(
+            f"{item['variant']:>7}  {str(item['all_invariants_pass']):>5}"
+            f"  {provider['demand_reuse_hits']:>9}"
+            f"  {provider['demand_prefetch_served']:>10}"
+            f"  {provider['demand_misses']:>11}"
+            f"  {format_bytes(provider['reader_bytes']):>10}"
+            f"  {streaming['decode_seconds']:>14.3f}"
+        )
+    return "\n".join(lines)
+
+
+def _write_telemetry_jsonl(path: str, telemetry: dict[str, Any]) -> None:
+    output = Path(path).expanduser()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    rows = telemetry["records"] or telemetry["forwards"]
+    with output.open("w", encoding="utf-8") as stream:
+        for row in rows:
+            stream.write(
+                json.dumps({"agent": "Main Dev", **row}, ensure_ascii=False) + "\n"
+            )

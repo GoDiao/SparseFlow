@@ -22,6 +22,14 @@ class ExpertProvider(Protocol):
 
     def prepare(self, layer: int, expert_ids: tuple[int, ...]) -> None: ...
 
+    def begin_forward(self, forward: int, phase: str) -> None: ...
+
+    def observe_routes(self, layer: int, selected_experts) -> None: ...
+
+    def predict(self, routes_by_layer: Mapping[int, tuple[int, ...]]) -> None: ...
+
+    def finish_generation(self) -> None: ...
+
     def snapshot(self) -> dict[str, Any]: ...
 
     def storage_report(self) -> dict[str, Any]: ...
@@ -131,6 +139,25 @@ class ResidentExpertProvider:
                 raise ValueError(
                     f"expert id {expert_id} is outside [0, {self.locator.num_experts})"
                 )
+
+    def begin_forward(self, forward: int, phase: str) -> None:
+        del forward, phase
+        if self._closed:
+            raise RuntimeError("resident expert provider is closed")
+
+    def observe_routes(self, layer: int, selected_experts) -> None:
+        del selected_experts
+        if layer not in self._fused:
+            raise ValueError(f"resident expert layer is not loaded: {layer}")
+
+    def predict(self, routes_by_layer: Mapping[int, tuple[int, ...]]) -> None:
+        del routes_by_layer
+        if self._closed:
+            raise RuntimeError("resident expert provider is closed")
+
+    def finish_generation(self) -> None:
+        if self._closed:
+            raise RuntimeError("resident expert provider is closed")
 
     def snapshot(self) -> dict[str, Any]:
         return {
