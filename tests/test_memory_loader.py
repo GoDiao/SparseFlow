@@ -14,7 +14,11 @@ except ImportError:  # pragma: no cover
     nn = None
 
 from sparseflow.cli import main
-from sparseflow.memory_loader import build_memory_load_plan, prepare_qwen36_meta_text_model
+from sparseflow.memory_loader import (
+    build_memory_load_plan,
+    materialize_meta_text_model,
+    prepare_qwen36_meta_text_model,
+)
 
 
 def write_shard(path: Path, tensors):
@@ -145,6 +149,16 @@ class MemoryLoadPlanTest(unittest.TestCase):
             self.assertEqual(
                 [layer.mlp.experts.layer for layer in build.model.model.layers],
                 [0, 1],
+            )
+
+            materialized = materialize_meta_text_model(build, dtype="bf16")
+            load_result = materialized.as_dict()
+            self.assertEqual(load_result["loaded_tensors"], 2)
+            self.assertEqual(load_result["expert_payload_bytes_during_init"], 0)
+            self.assertEqual(load_result["remaining_meta_parameters"], 0)
+            self.assertEqual(load_result["routed_expert_parameters"], 0)
+            self.assertTrue(
+                all(not parameter.is_meta for parameter in materialized.model.parameters())
             )
 
 

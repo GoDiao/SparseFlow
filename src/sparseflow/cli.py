@@ -18,7 +18,11 @@ from .benchmark import (
 from .bytes import format_bytes
 from .loader import load_expert_raw
 from .locator import ExpertLocator
-from .memory_loader import build_memory_load_plan, build_qwen36_meta_text_model
+from .memory_loader import (
+    build_memory_load_plan,
+    build_qwen36_meta_text_model,
+    materialize_qwen36_text_model,
+)
 from .moe_probe import compare_expert_paths, compare_moe_cache_paths, compare_moe_paths
 from .moe_runtime import compare_multilayer_moe_paths
 from .text_runtime import Qwen36TextRuntime, compare_text_paths
@@ -61,6 +65,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     native_meta_p.add_argument("model")
     native_meta_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    native_load_p = sub.add_parser(
+        "native-load",
+        help="Selectively materialize Qwen3.6 text weights while skipping experts.",
+    )
+    native_load_p.add_argument("model")
+    native_load_p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
+    native_load_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
 
     for command, help_text in (
         ("expert-stat", "Locate one fused expert without reading its payload."),
@@ -229,6 +241,15 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(result, indent=2, ensure_ascii=False)
                 if args.json
                 else _format_native_meta(result)
+            )
+            return 0
+        if args.command == "native-load":
+            build = build_qwen36_meta_text_model(args.model)
+            result = materialize_qwen36_text_model(build, dtype=args.dtype).as_dict()
+            print(
+                json.dumps(result, indent=2, ensure_ascii=False)
+                if args.json
+                else _format_native_load(result)
             )
             return 0
         if args.command == "expert-stat":
@@ -464,6 +485,22 @@ def _format_native_meta(result: dict[str, Any]) -> str:
             f"meta buffers       {result['meta_buffers']}",
             f"expert parameters  {result['routed_expert_parameters']}",
             f"payload read       {format_bytes(result['payload_bytes_read'])}",
+        ]
+    )
+
+
+def _format_native_load(result: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            f"SparseFlow native-load: {result['model']}",
+            f"loaded tensors     {result['loaded_tensors']}",
+            f"resident payload   {format_bytes(result['source_payload_bytes_read'])}",
+            f"expert init read   {format_bytes(result['expert_payload_bytes_during_init'])}",
+            f"expert skipped     {format_bytes(result['streamed_expert_bytes_skipped'])}",
+            f"non-text skipped   {format_bytes(result['non_text_bytes_skipped'])}",
+            f"remaining meta     {result['remaining_meta_parameters']} parameters, "
+            f"{result['remaining_meta_buffers']} buffers",
+            f"load seconds       {result['load_seconds']:.3f}",
         ]
     )
 

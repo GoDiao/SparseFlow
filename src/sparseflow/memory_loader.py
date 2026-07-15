@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+import time
 from typing import Any, Callable, Literal
 
 from .analyze import load_config
@@ -119,6 +120,44 @@ class MetaTextModelBuild:
         }
 
 
+@dataclass
+class MaterializedTextModel:
+    model: Any
+    plan: MemoryLoadPlan
+    loaded_source_names: tuple[str, ...]
+    loaded_target_names: tuple[str, ...]
+    source_payload_bytes_read: int
+    materialized_bytes: int
+    load_seconds: float
+
+    def as_dict(self) -> dict[str, Any]:
+        remaining_meta_parameters = tuple(
+            name for name, parameter in self.model.named_parameters() if parameter.is_meta
+        )
+        remaining_meta_buffers = tuple(
+            name for name, buffer in self.model.named_buffers() if buffer.is_meta
+        )
+        return {
+            "schema_version": 1,
+            "kind": "memory_native_selective_load",
+            "agent": "Main Dev",
+            "model": str(self.plan.model_dir),
+            "adapter": self.plan.adapter,
+            "loaded_tensors": len(self.loaded_source_names),
+            "source_payload_bytes_read": self.source_payload_bytes_read,
+            "materialized_bytes": self.materialized_bytes,
+            "expert_payload_bytes_during_init": 0,
+            "streamed_expert_bytes_skipped": self.plan.bytes_for("stream"),
+            "non_text_bytes_skipped": self.plan.bytes_for("skip"),
+            "remaining_meta_parameters": len(remaining_meta_parameters),
+            "remaining_meta_buffers": len(remaining_meta_buffers),
+            "routed_expert_parameters": sum(
+                ".mlp.experts." in name for name, _ in self.model.named_parameters()
+            ),
+            "load_seconds": self.load_seconds,
+        }
+
+
 def build_qwen36_meta_text_model(
     model_dir: str | Path,
     expert_factory: Callable[[int], Any] | None = None,
@@ -144,6 +183,123 @@ def build_qwen36_meta_text_model(
     if expert_factory is None:
         expert_factory = lambda layer: _MetaExpertPlaceholder(layer)
     return prepare_qwen36_meta_text_model(model, plan, expert_factory)
+
+
+def materialize_qwen36_text_model(
+    build: MetaTextModelBuild,
+    dtype: str = "bf16",
+) -> MaterializedTextModel:
+    materialized = materialize_meta_text_model(build, dtype=dtype)
+    _materialize_qwen36_runtime_buffers(materialized.model)
+    _audit_materialized_model(materialized)
+    return materialized
+
+
+def materialize_meta_text_model(
+    build: MetaTextModelBuild,
+    dtype: str = "bf16",
+) -> MaterializedTextModel:
+    import torch
+    from accelerate.utils import set_module_tensor_to_device
+    from safetensors import safe_open
+
+    dtype_value = {
+        "bf16": torch.bfloat16,
+        "fp16": torch.float16,
+        "fp32": torch.float32,
+    }.get(dtype.lower())
+    if dtype_value is None:
+        raise ValueError("dtype must be bf16, fp16, or fp32")
+
+    resident_by_shard: dict[Path, list[MemoryLoadEntry]] = defaultdict(list)
+    for entry in build.plan.resident_entries:
+        resident_by_shard[entry.shard].append(entry)
+
+    loaded_sources: list[str] = []
+    loaded_targets: list[str] = []
+    source_bytes = 0
+    materialized_bytes = 0
+    started = time.perf_counter()
+    for shard, entries in sorted(resident_by_shard.items(), key=lambda item: str(item[0])):
+        with safe_open(str(shard), framework="pt", device="cpu") as handle:
+            available = set(handle.keys())
+            for entry in sorted(entries, key=lambda item: item.source_name):
+                if entry.source_name not in available:
+                    raise ValueError(
+                        f"resident tensor is missing from planned shard: {entry.source_name}"
+                    )
+                value = handle.get_tensor(entry.source_name)
+                if tuple(value.shape) != entry.shape:
+                    raise ValueError(
+                        f"checkpoint shape changed for {entry.source_name}: "
+                        f"plan={entry.shape}, payload={tuple(value.shape)}"
+                    )
+                if value.is_floating_point():
+                    owned = value.clone() if value.dtype == dtype_value else value.to(dtype_value)
+                else:
+                    owned = value.clone()
+                assert entry.target_name is not None
+                set_module_tensor_to_device(
+                    build.model,
+                    entry.target_name,
+                    "cpu",
+                    value=owned,
+                    dtype=owned.dtype,
+                    clear_cache=False,
+                )
+                loaded_sources.append(entry.source_name)
+                loaded_targets.append(entry.target_name)
+                source_bytes += entry.nbytes
+                materialized_bytes += owned.numel() * owned.element_size()
+                del value, owned
+
+    expected_sources = {entry.source_name for entry in build.plan.resident_entries}
+    expected_targets = {
+        entry.target_name for entry in build.plan.resident_entries if entry.target_name
+    }
+    if set(loaded_sources) != expected_sources or set(loaded_targets) != expected_targets:
+        raise ValueError("selective loader did not materialize the complete resident plan")
+    return MaterializedTextModel(
+        model=build.model,
+        plan=build.plan,
+        loaded_source_names=tuple(loaded_sources),
+        loaded_target_names=tuple(loaded_targets),
+        source_payload_bytes_read=source_bytes,
+        materialized_bytes=materialized_bytes,
+        load_seconds=time.perf_counter() - started,
+    )
+
+
+def _materialize_qwen36_runtime_buffers(model: Any) -> None:
+    from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import (
+        Qwen3_5MoeTextRotaryEmbedding,
+    )
+
+    model.model.rotary_emb = Qwen3_5MoeTextRotaryEmbedding(model.config, device="cpu")
+
+
+def _audit_materialized_model(materialized: MaterializedTextModel) -> None:
+    model = materialized.model
+    remaining_meta_parameters = [
+        name for name, parameter in model.named_parameters() if parameter.is_meta
+    ]
+    remaining_meta_buffers = [
+        name for name, buffer in model.named_buffers() if buffer.is_meta
+    ]
+    if remaining_meta_parameters or remaining_meta_buffers:
+        raise ValueError(
+            "selective load left unresolved meta tensors: "
+            f"parameters={remaining_meta_parameters[:8]}, buffers={remaining_meta_buffers[:8]}"
+        )
+    expert_parameters = [
+        name for name, _ in model.named_parameters() if ".mlp.experts." in name
+    ]
+    if expert_parameters:
+        raise ValueError(
+            f"materialized model contains routed expert parameters: {expert_parameters[:5]}"
+        )
+    if materialized.source_payload_bytes_read != materialized.plan.bytes_for("resident"):
+        raise ValueError("resident source-byte count does not match memory load plan")
 
 
 def prepare_qwen36_meta_text_model(
