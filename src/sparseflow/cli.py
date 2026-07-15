@@ -18,6 +18,7 @@ from .benchmark import (
 from .bytes import format_bytes
 from .loader import load_expert_raw
 from .locator import ExpertLocator
+from .memory_loader import build_memory_load_plan
 from .moe_probe import compare_expert_paths, compare_moe_cache_paths, compare_moe_paths
 from .moe_runtime import compare_multilayer_moe_paths
 from .text_runtime import Qwen36TextRuntime, compare_text_paths
@@ -45,6 +46,14 @@ def main(argv: list[str] | None = None) -> int:
     plan_p.add_argument("--ctx", type=int, default=4096, help="Context length for memory projection.")
     plan_p.add_argument("--reserve", type=float, default=2.5, help="Page-cache/runtime reserve in decimal GB.")
     plan_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    native_plan_p = sub.add_parser(
+        "native-plan",
+        help="Plan a text-only memory-native checkpoint load without reading payloads.",
+    )
+    native_plan_p.add_argument("model")
+    native_plan_p.add_argument("--entries", action="store_true", help="Include every tensor mapping.")
+    native_plan_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
 
     for command, help_text in (
         ("expert-stat", "Locate one fused expert without reading its payload."),
@@ -198,6 +207,15 @@ def main(argv: list[str] | None = None) -> int:
             result = build_plan(args.model, ram_gb=args.ram, ctx=args.ctx, reserve_gb=args.reserve)
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_plan(result))
             return 0 if not result["warnings"] else 1
+        if args.command == "native-plan":
+            plan = build_memory_load_plan(args.model)
+            result = plan.as_dict(include_entries=args.entries)
+            print(
+                json.dumps(result, indent=2, ensure_ascii=False)
+                if args.json
+                else _format_native_plan(result)
+            )
+            return 0
         if args.command == "expert-stat":
             result = ExpertLocator(args.model).locate(args.layer, args.expert).as_dict()
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_expert_stat(result))
@@ -403,6 +421,23 @@ def _format_plan(result: dict[str, Any]) -> str:
         lines.append("")
         lines.extend(f"warn        {warning}" for warning in result["warnings"])
     return "\n".join(lines)
+
+
+def _format_native_plan(result: dict[str, Any]) -> str:
+    counts = result["tensor_counts"]
+    sizes = result["tensor_bytes"]
+    reasons = result["reason_bytes"]
+    return "\n".join(
+        [
+            f"SparseFlow native-plan: {result['model']}",
+            f"adapter      {result['adapter']}",
+            f"resident     {counts.get('resident', 0)} tensors, {format_bytes(sizes['resident'])}",
+            f"stream       {counts.get('stream', 0)} tensors, {format_bytes(sizes['stream'])}",
+            f"skip MTP     {format_bytes(reasons.get('mtp', 0))}",
+            f"skip vision  {format_bytes(reasons.get('vision', 0))}",
+            f"payload read {format_bytes(result['payload_bytes_read'])}",
+        ]
+    )
 
 
 def _format_expert_stat(result: dict[str, Any]) -> str:
