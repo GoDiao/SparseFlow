@@ -196,9 +196,23 @@ standalone 进程峰值 RSS 为 9.216 GiB，prefill 和三次 KV decode 与 eage
 resident 的完整 BF16 logits 精确一致。结果见
 `docs/results/qwen36_stage7_1_memory_native_20260715.md`。[Main Dev]
 
-下一步进入 Phase 7.2：建立同 kernel 的 C3-R/C3-S 正式后端与逐 token
-telemetry，并针对当前 small-cache prefetch 重复读取问题优化 hot-tier 和
-lookahead policy。[Main Dev]
+### Phase 7.2 status: C3-R / C3-S same-kernel runtime complete
+
+已实现正式 `ExpertProvider` 边界、全量 RAM `ResidentExpertProvider` 和现有
+ExpertCache streaming provider 的统一接口。memory-native C3-R/C3-S 现在
+都安装相同的 `SparseFlowQwenExperts`，并共享相同的 routed dispatch、eager
+BF16 expert kernel、attention/DeltaNet、KV cache 和 greedy loop；唯一变化是
+expert 权重来自 resident fused buffer 或 SSD/ExpertCache。
+
+真实 Qwen3.6 验收预载 40 层、10,240 个逻辑 expert、80 个 fused buffer，
+总计恰好 60.000 GiB；C3-R 预载后的 generation expert I/O 为零。C3-R 与
+C3-S 在 prefill 和三次 decode 的完整 logits、160 条 route digest、生成 IDs
+和文本上全部精确一致。结果见
+`docs/results/qwen36_stage7_2_c3_runtime_20260715.md`。[Main Dev]
+
+下一步进入 Phase 7.3：在这个已冻结的同-kernel 边界上完善逐 token/forward
+telemetry，处理 cache policy、hot tier、lookahead prefetch、重复读取和
+I/O overlap。正式可复现性能矩阵仍留在 Phase 7.4。[Main Dev]
 
 ## Early Non-goals
 
