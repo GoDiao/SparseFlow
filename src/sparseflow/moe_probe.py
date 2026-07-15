@@ -101,6 +101,8 @@ class CachedExpertProvider:
     tensor decoding.
     """
 
+    backend_id = "sparseflow-streaming"
+
     def __init__(
         self,
         model_dir: str | Path,
@@ -230,6 +232,12 @@ class CachedExpertProvider:
             self._prefetch_metrics["submitted"] += len(pending)
             self._prefetch_metrics["batches"] += 1
 
+    def prepare(self, layer: int, expert_ids: tuple[int, ...]) -> None:
+        """Prepare selected experts when asynchronous prefetch is enabled."""
+
+        if self.prefetch_workers > 0:
+            self.prefetch(layer, expert_ids)
+
     def _consume_future(self, future: Future) -> dict[tuple[int, int], CachedExpert]:
         try:
             payloads, read_ms = future.result()
@@ -278,6 +286,31 @@ class CachedExpertProvider:
     def prefetch_stats(self) -> dict[str, int | float]:
         with self._prefetch_lock:
             return dict(self._prefetch_metrics)
+
+    def snapshot(self) -> dict[str, Any]:
+        cache = self.cache.stats_dict()
+        return {
+            "backend_id": self.backend_id,
+            "reader_calls": self.reader.read_calls,
+            "reader_bytes": self.reader.read_bytes,
+            "requests": cache["requests"],
+            "cache_hits": cache["hits"],
+            "cache_misses": cache["misses"],
+            "cache_evictions": cache["evictions"],
+            "cached_experts": cache["cache_entries"],
+            "cached_bytes": cache["cached_bytes"],
+            "loaded_bytes": cache["loaded_bytes"],
+            "decoded_entries": self.decoded_entries,
+        }
+
+    def storage_report(self) -> dict[str, Any]:
+        return {
+            **self.snapshot(),
+            "policy": "routed experts loaded on demand through ExpertCache",
+            "preload_read_calls": 0,
+            "preload_read_bytes": 0,
+            "prefetch": self.prefetch_stats(),
+        }
 
     def close(self) -> None:
         executor = self._executor

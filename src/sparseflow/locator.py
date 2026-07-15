@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from .analyze import load_config
 from .classifier import classifier_for_model
@@ -148,6 +148,30 @@ class ExpertLocator:
                     f"{previous.name} and {tensor.name}"
                 )
             parts[part] = tensor
+
+    @property
+    def layers(self) -> tuple[int, ...]:
+        """Return layers with indexed routed-expert tensors."""
+
+        return tuple(sorted(self._parts))
+
+    def fused_parts(self, layer: int) -> Mapping[str, TensorSpan]:
+        """Expose the fused routed tensors backing one layer as read-only metadata."""
+
+        try:
+            return dict(self._parts[layer])
+        except KeyError as exc:
+            raise ExpertLocatorError(f"no routed expert tensors found for layer {layer}") from exc
+
+    def fused_part(self, layer: int, part: str) -> TensorSpan:
+        """Return one fused routed tensor used by the resident provider."""
+
+        try:
+            return self._parts[layer][part]
+        except KeyError as exc:
+            raise ExpertLocatorError(
+                f"no routed expert part {part!r} found for layer {layer}"
+            ) from exc
 
     def locate(self, layer: int, expert_id: int) -> ExpertLocation:
         if layer < 0:
