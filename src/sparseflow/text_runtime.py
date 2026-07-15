@@ -3,18 +3,31 @@ from __future__ import annotations
 import gc
 import hashlib
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .cache import ExpertCache
+from .expert_provider import (
+    ExpertProvider,
+    ResidentExpertProvider,
+    StreamingExpertProvider,
+)
 from .loader import ShardReader
+from .locator import ExpertLocator
 from .memory_loader import (
     build_qwen36_meta_text_model,
     current_rss_bytes,
     materialize_qwen36_text_model,
     peak_rss_bytes,
 )
-from .moe_probe import CachedExpertProvider, run_routed_experts
+from .moe_probe import run_routed_experts
+
+
+RUNTIME_ID = "qwen36-text-memory-native-v1"
+EXPERT_MODULE_ID = "SparseFlowQwenExperts-v1"
+DISPATCH_ID = "qwen36-topk-index-add-v1"
+KERNEL_ID = "bf16-linear-silu-linear-eager-v1"
 
 
 try:
@@ -29,27 +42,43 @@ else:
     _Module = _torch_nn.Module
 
 
+@dataclass
+class RouteAudit:
+    """Compact exact route trace used by the C3-R/C3-S correctness gate."""
+
+    records: list[dict[str, Any]] = field(default_factory=list)
+
+    def record(self, layer: int, selected_experts) -> None:
+        values = selected_experts.detach().to(device="cpu").contiguous()
+        raw = values.numpy().tobytes()
+        self.records.append(
+            {
+                "ordinal": len(self.records),
+                "layer": layer,
+                "shape": list(values.shape),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "unique_experts": int(values.unique().numel()),
+            }
+        )
+
+
 class SparseFlowQwenExperts(_Module):
     """Transformers-compatible routed-expert module backed by SparseFlow."""
 
-    def __init__(self, layer: int, provider: CachedExpertProvider, prefetch: bool):
+    def __init__(self, layer: int, provider: ExpertProvider, route_audit: RouteAudit):
         super().__init__()
         self.layer = layer
         self.provider = provider
-        self.prefetch_enabled = prefetch
+        self.route_audit = route_audit
 
     def forward(self, hidden_states, top_k_index, top_k_weights):
-        prepare = (
-            lambda expert_ids: self.provider.prefetch(self.layer, expert_ids)
-            if self.prefetch_enabled
-            else None
-        )
+        self.route_audit.record(self.layer, top_k_index)
         return run_routed_experts(
             hidden_states,
             top_k_index,
             top_k_weights,
             lambda expert_id: self.provider.get(self.layer, expert_id),
-            prepare_routed=prepare,
+            prepare_routed=lambda expert_ids: self.provider.prepare(self.layer, expert_ids),
         )
 
 
@@ -74,7 +103,8 @@ class Qwen36TextRuntime:
         mode: str = "resident",
         reader: ShardReader | None = None,
         cache: ExpertCache | None = None,
-        provider: CachedExpertProvider | None = None,
+        provider: ExpertProvider | None = None,
+        route_audit: RouteAudit | None = None,
         prefetch_workers: int = 0,
         experts_implementation: str = "eager",
         load_mode: str = "transformers",
@@ -90,6 +120,7 @@ class Qwen36TextRuntime:
         self.reader = reader
         self.cache = cache
         self.provider = provider
+        self.route_audit = route_audit
         self.prefetch_workers = prefetch_workers
         self.experts_implementation = experts_implementation
         self.load_mode = load_mode
@@ -122,10 +153,12 @@ class Qwen36TextRuntime:
             raise ValueError("dtype must be bf16, fp16, or fp32")
         if load_mode not in {"transformers", "memory-native"}:
             raise ValueError("load_mode must be transformers or memory-native")
-        if load_mode == "memory-native" and mode != "streaming":
-            raise ValueError("memory-native loading currently requires streaming mode")
+        if load_mode == "memory-native" and experts_implementation not in {None, "eager"}:
+            raise ValueError("SparseFlow memory-native runtime requires eager expert arithmetic")
         if mode == "streaming" and experts_implementation not in {None, "eager"}:
             raise ValueError("SparseFlow streaming currently implements eager expert arithmetic")
+        if load_mode == "memory-native" and mode == "resident" and prefetch_workers:
+            raise ValueError("resident expert backend does not support prefetch workers")
         if device_map is None:
             device_map = {"": "cpu"}
         tokenizer = AutoTokenizer.from_pretrained(
@@ -136,44 +169,54 @@ class Qwen36TextRuntime:
         if load_mode == "memory-native":
             if device_map != {"": "cpu"} and device_map != "cpu":
                 raise ValueError("memory-native loading currently requires CPU model placement")
-            if cache_slots is None and cache_bytes is None:
-                cache_slots = 16
             reader = ShardReader()
-            cache = ExpertCache(capacity_per_layer=cache_slots, max_bytes=cache_bytes)
-            provider = CachedExpertProvider(
-                root,
-                cache,
-                reader,
-                torch,
-                prefetch_workers=prefetch_workers,
-                coalesce_gap=coalesce_gap,
-            )
+            cache = None
+            provider: ExpertProvider | None = None
             try:
+                if mode == "streaming":
+                    if cache_slots is None and cache_bytes is None:
+                        cache_slots = 16
+                    cache = ExpertCache(capacity_per_layer=cache_slots, max_bytes=cache_bytes)
+                    provider = StreamingExpertProvider(
+                        root,
+                        cache,
+                        reader,
+                        torch,
+                        prefetch_workers=prefetch_workers,
+                        coalesce_gap=coalesce_gap,
+                    )
+                else:
+                    provider = ResidentExpertProvider(root, reader, torch)
+                route_audit = RouteAudit()
                 build = build_qwen36_meta_text_model(
                     root,
                     expert_factory=lambda layer: SparseFlowQwenExperts(
                         layer,
                         provider,
-                        prefetch_workers > 0,
+                        route_audit,
                     ),
                 )
                 materialized = materialize_qwen36_text_model(build, dtype=dtype)
             except Exception:
-                provider.close()
+                if provider is not None:
+                    provider.close()
                 reader.close()
                 raise
+            assert provider is not None
             loader_report = materialized.as_dict()
             loader_report["expert_reader_calls_after_init"] = reader.read_calls
             loader_report["expert_reader_bytes_after_init"] = reader.read_bytes
+            loader_report["expert_provider"] = provider.storage_report()
             return cls(
                 materialized.model,
                 tokenizer,
                 torch,
                 root,
-                mode="streaming",
+                mode=mode,
                 reader=reader,
                 cache=cache,
                 provider=provider,
+                route_audit=route_audit,
                 prefetch_workers=prefetch_workers,
                 experts_implementation="eager",
                 load_mode="memory-native",
@@ -216,7 +259,7 @@ class Qwen36TextRuntime:
             cache_slots = 16
         reader = ShardReader()
         cache = ExpertCache(capacity_per_layer=cache_slots, max_bytes=cache_bytes)
-        provider = CachedExpertProvider(
+        provider = StreamingExpertProvider(
             root,
             cache,
             reader,
@@ -224,7 +267,8 @@ class Qwen36TextRuntime:
             prefetch_workers=prefetch_workers,
             coalesce_gap=coalesce_gap,
         )
-        cls._attach_streaming_experts(model, provider, prefetch_workers > 0)
+        route_audit = RouteAudit()
+        cls._attach_sparseflow_experts(model, provider, route_audit)
         return cls(
             model,
             tokenizer,
@@ -234,6 +278,7 @@ class Qwen36TextRuntime:
             reader=reader,
             cache=cache,
             provider=provider,
+            route_audit=route_audit,
             prefetch_workers=prefetch_workers,
             experts_implementation="eager",
             load_mode="transformers",
@@ -241,7 +286,11 @@ class Qwen36TextRuntime:
         )
 
     @staticmethod
-    def _attach_streaming_experts(model, provider: CachedExpertProvider, prefetch: bool) -> None:
+    def _attach_sparseflow_experts(
+        model,
+        provider: ExpertProvider,
+        route_audit: RouteAudit,
+    ) -> None:
         language_model = model.model
         layers = (
             language_model.language_model.layers
@@ -252,7 +301,7 @@ class Qwen36TextRuntime:
             decoder_layer.mlp.experts = SparseFlowQwenExperts(
                 layer_index,
                 provider,
-                prefetch,
+                route_audit,
             )
 
     @staticmethod
@@ -319,11 +368,14 @@ class Qwen36TextRuntime:
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask", self.torch.ones_like(input_ids))
         rss_before_prefill = current_rss_bytes()
+        storage_before_prefill = self.provider.snapshot() if self.provider is not None else None
+        route_start = len(self.route_audit.records) if self.route_audit is not None else 0
 
         prefill_started = time.perf_counter()
         first = self.prefill(inputs)
         next_token = first.logits[:, -1, :].argmax(dim=-1, keepdim=True)
         prefill_seconds = time.perf_counter() - prefill_started
+        storage_after_prefill = self.provider.snapshot() if self.provider is not None else None
         generated = [next_token]
         logit_fingerprints = (
             [_logit_fingerprint(first.logits[:, -1, :], self.torch)]
@@ -333,6 +385,7 @@ class Qwen36TextRuntime:
         past = getattr(first, "past_key_values", None)
         eos_id = getattr(self.tokenizer, "eos_token_id", None)
         decode_durations: list[float] = []
+        decode_storage: list[dict[str, Any]] = []
 
         for _ in range(1, max_new_tokens):
             attention_mask = self.torch.cat(
@@ -342,6 +395,8 @@ class Qwen36TextRuntime:
             started = time.perf_counter()
             output = self.decode(next_token, attention_mask, past)
             decode_durations.append(time.perf_counter() - started)
+            if self.provider is not None:
+                decode_storage.append(self.provider.snapshot())
             next_token = output.logits[:, -1, :].argmax(dim=-1, keepdim=True)
             generated.append(next_token)
             if logit_fingerprints is not None:
@@ -358,10 +413,23 @@ class Qwen36TextRuntime:
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )
+        storage_after_generation = self.provider.snapshot() if self.provider is not None else None
+        route_records = (
+            self.route_audit.records[route_start:] if self.route_audit is not None else None
+        )
         return {
             "mode": self.mode,
+            "expert_backend": (
+                self.provider.backend_id if self.provider is not None else "transformers-resident"
+            ),
             "load_mode": self.load_mode,
             "experts_implementation": self.experts_implementation,
+            "runtime_identity": {
+                "runtime_id": RUNTIME_ID if self.load_mode == "memory-native" else "transformers-reference",
+                "expert_module_id": EXPERT_MODULE_ID if self.provider is not None else "transformers-experts",
+                "dispatch_id": DISPATCH_ID if self.provider is not None else "transformers-dispatch",
+                "kernel_id": KERNEL_ID if self.provider is not None else self.experts_implementation,
+            },
             "prompt": prompt,
             "input_ids": input_ids[0].tolist(),
             "generated_ids": generated_ids[0].tolist(),
@@ -373,6 +441,14 @@ class Qwen36TextRuntime:
             "logit_fingerprints": logit_fingerprints,
             "cache": self.cache.stats_dict() if self.cache is not None else None,
             "prefetch": self.provider.prefetch_stats() if self.provider is not None else None,
+            "provider_storage": self.provider.storage_report() if self.provider is not None else None,
+            "storage_phases": {
+                "before_prefill": storage_before_prefill,
+                "after_prefill": storage_after_prefill,
+                "after_each_decode": decode_storage,
+                "after_generation": storage_after_generation,
+            },
+            "route_audit": route_records,
             "loader": self.loader_report,
             "memory": {
                 "rss_before_prefill": rss_before_prefill,
@@ -479,6 +555,141 @@ def compare_text_paths(
     }
 
 
+def compare_sparseflow_runtime_paths(
+    model_dir: str | Path,
+    prompt: str,
+    max_new_tokens: int = 4,
+    dtype: str = "bf16",
+    cache_slots: int | None = 16,
+    cache_bytes: int | None = None,
+    prefetch_workers: int = 0,
+    coalesce_gap: int = 0,
+) -> dict[str, Any]:
+    """Compare C3-R and C3-S with one memory-native runtime and expert kernel."""
+
+    if not prompt.strip():
+        raise ValueError("prompt must not be empty")
+    if max_new_tokens < 1:
+        raise ValueError("max_new_tokens must be positive")
+    if dtype != "bf16":
+        raise ValueError("Stage 7.2 C3-R/C3-S runtime-check currently requires bf16")
+
+    root = Path(model_dir).expanduser().resolve()
+    resident, resident_load_seconds = _run_text_path(
+        root,
+        prompt,
+        max_new_tokens,
+        mode="resident",
+        dtype=dtype,
+        experts_implementation="eager",
+        load_mode="memory-native",
+    )
+    gc.collect()
+    streaming, streaming_load_seconds = _run_text_path(
+        root,
+        prompt,
+        max_new_tokens,
+        mode="streaming",
+        dtype=dtype,
+        cache_slots=cache_slots,
+        cache_bytes=cache_bytes,
+        prefetch_workers=prefetch_workers,
+        coalesce_gap=coalesce_gap,
+        experts_implementation="eager",
+        load_mode="memory-native",
+    )
+
+    correctness = compare_generation_results(resident, streaming)
+    route_audit_equal = resident.get("route_audit") == streaming.get("route_audit")
+    identity_equal = resident.get("runtime_identity") == streaming.get("runtime_identity")
+    resident_storage = resident["provider_storage"]
+    resident_phases = resident["storage_phases"]
+    streaming_phases = streaming["storage_phases"]
+    resident_generation_reads = _reader_delta(
+        resident_phases["before_prefill"],
+        resident_phases["after_generation"],
+    )
+    streaming_generation_reads = _reader_delta(
+        streaming_phases["before_prefill"],
+        streaming_phases["after_generation"],
+    )
+
+    # Header-only expected footprint; no provider payload is materialized here.
+    expert_locator = ExpertLocator(root)
+    expected_layers = len(expert_locator.layers)
+    expected_experts = expected_layers * expert_locator.num_experts
+    expected_bytes = sum(
+        span.nbytes
+        for layer in expert_locator.layers
+        for span in expert_locator.fused_parts(layer).values()
+    )
+    invariants = {
+        "same_runtime_identity": identity_equal,
+        "same_route_audit": route_audit_equal,
+        "full_generation_exact": correctness["all_equal"],
+        "resident_all_experts_loaded": (
+            resident_storage["resident_layers"] == expected_layers
+            and resident_storage["resident_experts"] == expected_experts
+        ),
+        "resident_payload_exact": resident_storage["resident_bytes"] == expected_bytes,
+        "resident_preload_payload_exact": resident_storage["preload_read_bytes"] == expected_bytes,
+        "resident_generation_zero_expert_io": (
+            resident_generation_reads["read_calls"] == 0
+            and resident_generation_reads["read_bytes"] == 0
+        ),
+        "streaming_init_zero_expert_io": (
+            streaming["loader"]["expert_reader_calls_after_init"] == 0
+            and streaming["loader"]["expert_reader_bytes_after_init"] == 0
+        ),
+        "streaming_generation_reads_experts": streaming_generation_reads["read_bytes"] > 0,
+    }
+    return {
+        "schema_version": 2,
+        "kind": "qwen3_5_stage7_2_c3_runtime_correctness",
+        "stage": "7.2",
+        "agent": "Main Dev",
+        "model": str(root),
+        "prompt": prompt,
+        "max_new_tokens": max_new_tokens,
+        "dtype": dtype,
+        "runtime_identity": resident["runtime_identity"],
+        "cache_policy": {
+            "capacity_per_layer": cache_slots,
+            "max_bytes": cache_bytes,
+            "prefetch_workers": prefetch_workers,
+            "coalesce_gap": coalesce_gap,
+        },
+        "expected": {
+            "layers": expected_layers,
+            "experts_per_layer": expert_locator.num_experts,
+            "logical_experts": expected_experts,
+            "routed_expert_bytes": expected_bytes,
+        },
+        "resident": {
+            **resident,
+            "load_seconds": resident_load_seconds,
+            "generation_expert_io": resident_generation_reads,
+        },
+        "streaming": {
+            **streaming,
+            "load_seconds": streaming_load_seconds,
+            "generation_expert_io": streaming_generation_reads,
+        },
+        "correctness": {
+            **correctness,
+            "route_audit_equal": route_audit_equal,
+            "runtime_identity_equal": identity_equal,
+        },
+        "invariants": invariants,
+        "all_invariants_pass": all(invariants.values()),
+        "boundary": (
+            "C3-R and C3-S use the same text-only memory-native model, "
+            "SparseFlow expert module, dispatch order, eager BF16 kernel, KV cache, "
+            "and greedy generation loop; only the expert provider differs."
+        ),
+    }
+
+
 def compare_generation_results(
     resident: dict[str, Any],
     streaming: dict[str, Any],
@@ -549,6 +760,13 @@ def _run_text_path(
     finally:
         runtime.close()
     return result, load_seconds
+
+
+def _reader_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, int]:
+    return {
+        "read_calls": int(after["reader_calls"]) - int(before["reader_calls"]),
+        "read_bytes": int(after["reader_bytes"]) - int(before["reader_bytes"]),
+    }
 
 
 def _logit_fingerprint(logits, torch) -> dict[str, Any]:

@@ -25,7 +25,11 @@ from .memory_loader import (
 )
 from .moe_probe import compare_expert_paths, compare_moe_cache_paths, compare_moe_paths
 from .moe_runtime import compare_multilayer_moe_paths
-from .text_runtime import Qwen36TextRuntime, compare_text_paths
+from .text_runtime import (
+    Qwen36TextRuntime,
+    compare_sparseflow_runtime_paths,
+    compare_text_paths,
+)
 from .plan import build_plan
 from .route_trace import (
     capture_route_trace,
@@ -187,6 +191,11 @@ def main(argv: list[str] | None = None) -> int:
     text_p.add_argument("--prompt", required=True)
     text_p.add_argument("--mode", choices=("resident", "streaming"), default="streaming")
     text_p.add_argument(
+        "--expert-backend",
+        choices=("sparseflow-resident", "sparseflow-streaming"),
+        help="Select a Stage 7.2 memory-native SparseFlow expert backend.",
+    )
+    text_p.add_argument(
         "--load-mode",
         choices=("transformers", "memory-native"),
         default="transformers",
@@ -225,6 +234,21 @@ def main(argv: list[str] | None = None) -> int:
     text_check_p.add_argument("--coalesce-gap", type=int, default=0)
     text_check_p.add_argument("--output", help="Write comparison JSON to this path.")
     text_check_p.add_argument("--json", action="store_true")
+
+    runtime_check_p = sub.add_parser(
+        "runtime-check",
+        help="Compare memory-native C3-R and C3-S with the same SparseFlow kernel.",
+    )
+    runtime_check_p.add_argument("model")
+    runtime_check_p.add_argument("--prompt", required=True)
+    runtime_check_p.add_argument("--dtype", choices=("bf16",), default="bf16")
+    runtime_check_p.add_argument("--max-new-tokens", type=int, default=4)
+    runtime_check_p.add_argument("--cache-slots", type=int, default=16)
+    runtime_check_p.add_argument("--cache-bytes", help="Global byte budget, e.g. 4GiB.")
+    runtime_check_p.add_argument("--prefetch-workers", type=int, default=0)
+    runtime_check_p.add_argument("--coalesce-gap", type=int, default=0)
+    runtime_check_p.add_argument("--output", help="Write comparison JSON to this path.")
+    runtime_check_p.add_argument("--json", action="store_true")
 
     args = parser.parse_args(argv)
     try:
@@ -377,17 +401,23 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "text-generate":
             cache_bytes = _parse_single_byte_budget(args.cache_bytes) if args.cache_bytes else None
-            cache_slots = args.cache_slots if args.mode == "streaming" else None
+            mode = (
+                args.expert_backend.removeprefix("sparseflow-")
+                if args.expert_backend
+                else args.mode
+            )
+            load_mode = "memory-native" if args.expert_backend else args.load_mode
+            cache_slots = args.cache_slots if mode == "streaming" else None
             with Qwen36TextRuntime.from_pretrained(
                 args.model,
-                mode=args.mode,
+                mode=mode,
                 dtype=args.dtype,
                 cache_slots=cache_slots,
                 cache_bytes=cache_bytes,
                 prefetch_workers=args.prefetch_workers,
                 coalesce_gap=args.coalesce_gap,
                 experts_implementation=args.experts_implementation,
-                load_mode=args.load_mode,
+                load_mode=load_mode,
             ) as runtime:
                 result = runtime.greedy_generate(
                     args.prompt,
@@ -420,6 +450,25 @@ def main(argv: list[str] | None = None) -> int:
                 output.write_text(encoded + "\n", encoding="utf-8")
             print(encoded if args.json else _format_text_check(result))
             return 0 if result["correctness"]["all_equal"] else 1
+        if args.command == "runtime-check":
+            cache_bytes = _parse_single_byte_budget(args.cache_bytes) if args.cache_bytes else None
+            result = compare_sparseflow_runtime_paths(
+                args.model,
+                prompt=args.prompt,
+                max_new_tokens=args.max_new_tokens,
+                dtype=args.dtype,
+                cache_slots=args.cache_slots,
+                cache_bytes=cache_bytes,
+                prefetch_workers=args.prefetch_workers,
+                coalesce_gap=args.coalesce_gap,
+            )
+            encoded = json.dumps(result, indent=2, ensure_ascii=False)
+            if args.output:
+                output = Path(args.output).expanduser()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(encoded + "\n", encoding="utf-8")
+            print(encoded if args.json else _format_runtime_check(result))
+            return 0 if result["all_invariants_pass"] else 1
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         parser.exit(2, f"sparseflow: error: {exc}\n")
     return 2
@@ -672,5 +721,23 @@ def _format_text_check(result: dict[str, Any]) -> str:
             f"prefill={streaming['prefill_seconds']:.3f}s decode={streaming['decode_seconds']:.3f}s",
             f"cache        requests={cache.get('requests', 0)} hits={cache.get('hits', 0)} "
             f"misses={cache.get('misses', 0)} evictions={cache.get('evictions', 0)}",
+        ]
+    )
+
+
+def _format_runtime_check(result: dict[str, Any]) -> str:
+    resident = result["resident"]
+    streaming = result["streaming"]
+    return "\n".join(
+        [
+            "SparseFlow Stage 7.2 runtime-check",
+            f"runtime      {result['runtime_identity']}",
+            f"tokens       C3-R={resident['generated_ids']} C3-S={streaming['generated_ids']}",
+            f"text         C3-R={resident['text']!r} C3-S={streaming['text']!r}",
+            f"resident     {format_bytes(resident['provider_storage']['resident_bytes'])} in RAM; "
+            f"generation I/O={format_bytes(resident['generation_expert_io']['read_bytes'])}",
+            f"streaming    generation I/O={format_bytes(streaming['generation_expert_io']['read_bytes'])}",
+            f"correct      {result['correctness']}",
+            f"invariants   {result['invariants']}",
         ]
     )

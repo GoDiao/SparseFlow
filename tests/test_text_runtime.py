@@ -10,7 +10,10 @@ from torch import nn
 from sparseflow.cli import main
 from sparseflow.text_runtime import (
     Qwen36TextRuntime,
+    RouteAudit,
+    SparseFlowQwenExperts,
     compare_generation_results,
+    compare_sparseflow_runtime_paths,
     compare_text_paths,
 )
 
@@ -51,6 +54,36 @@ class FakeModel(nn.Module):
 
 
 class TextRuntimeTest(unittest.TestCase):
+    def test_sparseflow_expert_module_uses_provider_for_shared_dispatch(self):
+        class Provider:
+            backend_id = "test"
+
+            def __init__(self):
+                self.prepared = []
+
+            def prepare(self, layer, expert_ids):
+                self.prepared.append((layer, expert_ids))
+
+            def get(self, _layer, expert_id):
+                scale = float(expert_id + 1)
+                return {
+                    "gate_up_proj": torch.full((4, 2), scale, dtype=torch.bfloat16),
+                    "down_proj": torch.full((2, 2), scale, dtype=torch.bfloat16),
+                }
+
+        provider = Provider()
+        audit = RouteAudit()
+        module = SparseFlowQwenExperts(3, provider, audit)
+        hidden = torch.ones((2, 2), dtype=torch.bfloat16)
+        selected = torch.tensor([[0], [1]], dtype=torch.long)
+        routing = torch.ones((2, 1), dtype=torch.bfloat16)
+        output = module(hidden, selected, routing)
+
+        self.assertEqual(tuple(output.shape), (2, 2))
+        self.assertEqual(provider.prepared, [(3, (0, 1))])
+        self.assertEqual(audit.records[0]["layer"], 3)
+        self.assertEqual(audit.records[0]["shape"], [2, 1])
+
     def test_prefill_decode_and_greedy_generation(self):
         model = FakeModel()
         runtime = Qwen36TextRuntime(
@@ -203,6 +236,108 @@ class TextRuntimeTest(unittest.TestCase):
             run_path.call_args_list[1].kwargs["load_mode"],
             "memory-native",
         )
+
+    def test_stage72_runtime_check_pins_same_memory_native_runtime(self):
+        identity = {
+            "runtime_id": "same",
+            "expert_module_id": "same",
+            "dispatch_id": "same",
+            "kernel_id": "same",
+        }
+
+        def result(backend):
+            resident = backend == "sparseflow-resident"
+            before = {"reader_calls": 80 if resident else 0, "reader_bytes": 400 if resident else 0}
+            after = dict(before) if resident else {"reader_calls": 2, "reader_bytes": 20}
+            storage = {
+                "backend_id": backend,
+                "resident_layers": 2 if resident else 0,
+                "resident_experts": 4 if resident else 0,
+                "resident_bytes": 400 if resident else 0,
+                "preload_read_bytes": 400 if resident else 0,
+            }
+            if not resident:
+                storage.update({"reader_bytes": 20, "reader_calls": 2})
+            return {
+                "input_ids": [1],
+                "generated_ids": [2],
+                "generated_tokens": 1,
+                "text": "ok",
+                "logit_fingerprints": [{"sha256": "same"}],
+                "route_audit": [{"sha256": "route"}],
+                "runtime_identity": identity,
+                "provider_storage": storage,
+                "storage_phases": {
+                    "before_prefill": before,
+                    "after_generation": after,
+                },
+                "loader": {
+                    "expert_reader_calls_after_init": 80 if resident else 0,
+                    "expert_reader_bytes_after_init": 400 if resident else 0,
+                },
+            }
+
+        fake_locator = types.SimpleNamespace(
+            layers=(0, 1),
+            num_experts=2,
+            fused_parts=lambda _layer: {
+                "gate_up_proj": types.SimpleNamespace(nbytes=100),
+                "down_proj": types.SimpleNamespace(nbytes=100),
+            },
+        )
+        with patch("sparseflow.text_runtime.ExpertLocator", return_value=fake_locator):
+            with patch(
+                "sparseflow.text_runtime._run_text_path",
+                side_effect=[
+                    (result("sparseflow-resident"), 1.0),
+                    (result("sparseflow-streaming"), 2.0),
+                ],
+            ) as run_path:
+                comparison = compare_sparseflow_runtime_paths(
+                    "/tmp/model",
+                    "hello",
+                    max_new_tokens=1,
+                )
+
+        self.assertTrue(comparison["all_invariants_pass"])
+        self.assertEqual(run_path.call_args_list[0].kwargs["mode"], "resident")
+        self.assertEqual(run_path.call_args_list[1].kwargs["mode"], "streaming")
+        self.assertTrue(
+            all(call.kwargs["load_mode"] == "memory-native" for call in run_path.call_args_list)
+        )
+        self.assertTrue(
+            all(
+                call.kwargs["experts_implementation"] == "eager"
+                for call in run_path.call_args_list
+            )
+        )
+
+    def test_runtime_check_cli_returns_invariant_status(self):
+        result = {
+            "all_invariants_pass": True,
+            "runtime_identity": {"kernel_id": "same"},
+            "correctness": {"all_equal": True},
+            "invariants": {"same_runtime_identity": True},
+            "resident": {
+                "generated_ids": [2],
+                "text": "ok",
+                "provider_storage": {"resident_bytes": 100},
+                "generation_expert_io": {"read_bytes": 0},
+            },
+            "streaming": {
+                "generated_ids": [2],
+                "text": "ok",
+                "generation_expert_io": {"read_bytes": 20},
+            },
+        }
+        with patch("sparseflow.cli.compare_sparseflow_runtime_paths", return_value=result):
+            output = StringIO()
+            with redirect_stdout(output):
+                exit_code = main(
+                    ["runtime-check", "/tmp/model", "--prompt", "hello"]
+                )
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Stage 7.2 runtime-check", output.getvalue())
 
 
 if __name__ == "__main__":
