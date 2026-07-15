@@ -13,9 +13,11 @@ from sparseflow.text_runtime import (
     RouteAudit,
     SparseFlowQwenExperts,
     compare_generation_results,
+    compare_sparseflow_policy_paths,
     compare_sparseflow_runtime_paths,
     compare_text_paths,
 )
+from sparseflow.telemetry import RuntimeTelemetry
 
 
 class FakeTokenizer:
@@ -54,6 +56,24 @@ class FakeModel(nn.Module):
 
 
 class TextRuntimeTest(unittest.TestCase):
+    def test_layer_telemetry_preserves_forward_phase_and_counter_deltas(self):
+        telemetry = RuntimeTelemetry("layer")
+        telemetry.begin_forward(1, "decode", 12)
+        selected = torch.tensor([[1, 2]], dtype=torch.long)
+        telemetry.record_layer(
+            3,
+            selected,
+            {"reader_calls": 4, "reader_bytes": 10, "cache_hits": 1},
+            {"reader_calls": 6, "reader_bytes": 30, "cache_hits": 2},
+            1.5,
+        )
+        result = telemetry.as_dict()
+
+        self.assertEqual(result["summary"]["decode_forwards"], 1)
+        self.assertEqual(result["records"][0]["layer"], 3)
+        self.assertEqual(result["records"][0]["provider"]["reader_calls"], 2)
+        self.assertEqual(result["records"][0]["provider"]["reader_bytes"], 20)
+        self.assertEqual(result["forwards"][0]["token_position"], 12)
     def test_sparseflow_expert_module_uses_provider_for_shared_dispatch(self):
         class Provider:
             backend_id = "test"
@@ -63,6 +83,12 @@ class TextRuntimeTest(unittest.TestCase):
 
             def prepare(self, layer, expert_ids):
                 self.prepared.append((layer, expert_ids))
+
+            def observe_routes(self, _layer, _selected_experts):
+                pass
+
+            def snapshot(self):
+                return {}
 
             def get(self, _layer, expert_id):
                 scale = float(expert_id + 1)
@@ -338,6 +364,50 @@ class TextRuntimeTest(unittest.TestCase):
                 )
         self.assertEqual(exit_code, 0)
         self.assertIn("Stage 7.2 runtime-check", output.getvalue())
+
+    def test_stage73_policy_check_reuses_resident_reference_and_checks_accounting(self):
+        base = {
+            "input_ids": [1],
+            "generated_ids": [2, 3],
+            "generated_tokens": 2,
+            "text": "ok",
+            "logit_fingerprints": [{"sha256": "a"}, {"sha256": "b"}],
+            "route_audit": [{"sha256": "r"}],
+            "runtime_identity": {"kernel_id": "same"},
+        }
+        streaming = {
+            **base,
+            "provider_storage": {
+                "cached_bytes": 4,
+                "reader_bytes": 8,
+                "demand_requests": 2,
+                "demand_reuse_hits": 1,
+                "demand_prefetch_served": 0,
+                "demand_misses": 1,
+            },
+            "loader": {
+                "expert_reader_calls_after_init": 0,
+                "expert_reader_bytes_after_init": 0,
+            },
+            "prefetch": {"failed": 0},
+        }
+        with patch(
+            "sparseflow.text_runtime._run_text_path",
+            side_effect=[(dict(base), 1.0), (streaming, 2.0)],
+        ) as run_path:
+            result = compare_sparseflow_policy_paths(
+                "/tmp/model",
+                "hello",
+                max_new_tokens=2,
+                cache_bytes=16,
+                variants=("S1",),
+            )
+
+        self.assertTrue(result["all_invariants_pass"])
+        self.assertEqual(run_path.call_count, 2)
+        self.assertEqual(run_path.call_args_list[0].kwargs["mode"], "resident")
+        self.assertEqual(run_path.call_args_list[1].kwargs["mode"], "streaming")
+        self.assertEqual(run_path.call_args_list[1].kwargs["cache_policy"], "lru")
 
 
 if __name__ == "__main__":

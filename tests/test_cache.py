@@ -6,9 +6,12 @@ from pathlib import Path
 
 from sparseflow.benchmark import generate_trace, load_trace, parse_byte_budgets, run_expert_benchmark
 from sparseflow.cache import ExpertCache
+from sparseflow.cache_policy import make_cache_policy
 from sparseflow.loader import ShardReader
 from sparseflow.locator import ExpertLocator
 from sparseflow.trace import load_route_trace
+from sparseflow.policy_benchmark import run_policy_replay
+from sparseflow.trace import RouteTrace, TraceGroup
 
 
 def write_shard(path: Path, tensors):
@@ -28,6 +31,44 @@ def write_shard(path: Path, tensors):
 
 
 class ExpertCacheTest(unittest.TestCase):
+    def test_no_cache_policy_rejects_admission_under_nonzero_budget(self):
+        cache = ExpertCache(max_bytes=16, policy=make_cache_policy("none"))
+        cache.begin_forward(0, "decode")
+        cache.put_sized(0, 0, 4)
+
+        self.assertEqual(cache.entries, 0)
+        self.assertEqual(cache.cached_bytes, 0)
+        self.assertEqual(cache.stats.admission_rejections, 1)
+
+    def test_heat_policy_protects_hot_entry_and_uses_second_touch_prefill(self):
+        policy = make_cache_policy("heat", max_hot_entries=1)
+        cache = ExpertCache(max_bytes=2, policy=policy)
+        cache.begin_forward(0, "prefill")
+        cache.observe_routes(0, {0: 3, 1: 1})
+        cache.put_sized(0, 0, 1)
+        cache.put_sized(0, 1, 1)
+
+        self.assertIsNotNone(cache.peek(0, 0))
+        self.assertIsNone(cache.peek(0, 1))
+        self.assertEqual(cache.stats.admission_rejections, 1)
+
+        cache.observe_routes(0, {1: 1})
+        cache.put_sized(0, 1, 1)
+        cache.observe_routes(0, {2: 2})
+        cache.put_sized(0, 2, 1)
+        self.assertIsNotNone(cache.peek(0, 0))
+        self.assertIsNone(cache.peek(0, 1))
+        self.assertIsNotNone(cache.peek(0, 2))
+
+    def test_heat_decay_eventually_demotes_stale_hot_entry(self):
+        policy = make_cache_policy("heat", max_hot_entries=1)
+        policy.begin_forward(0, "decode")
+        policy.observe_routes(0, {3: 3}, "decode")
+        self.assertEqual(policy.hot_keys(), ((0, 3),))
+        for forward in range(1, 14):
+            policy.begin_forward(forward, "decode")
+        self.assertEqual(policy.hot_keys(), ())
+
     def test_per_layer_lru_and_stats(self):
         cache = ExpertCache(capacity_per_layer=1)
 
@@ -235,3 +276,27 @@ class ExpertBenchTest(unittest.TestCase):
         self.assertEqual(result["trace"]["batch_union_deduped_requests"], 2)
         self.assertEqual(result["results"][0]["phase_metrics"]["prefill"]["requests"], 2)
         self.assertEqual(result["results"][0]["phase_metrics"]["decode"]["requests"], 1)
+
+    def test_stage73_policy_replay_uses_real_cache_policy_and_prefetch_accounting(self):
+        trace = RouteTrace(
+            groups=(
+                TraceGroup(0, "prefill", 0, 0, 10, ((0, 0), (0, 1))),
+                TraceGroup(1, "decode", 0, 1, 11, ((0, 0), (0, 1))),
+                TraceGroup(2, "decode", 0, 2, 12, ((0, 0), (0, 1))),
+                TraceGroup(3, "decode", 0, 3, 13, ((0, 0), (0, 1))),
+                TraceGroup(4, "decode", 0, 4, 14, ((0, 0),)),
+            )
+        )
+        no_cache = run_policy_replay(self.model, trace, "S0", max_bytes=8)
+        predictive = run_policy_replay(
+            self.model,
+            trace,
+            "S4",
+            max_bytes=4,
+            prefetch_budget_ratio=1.0,
+        )
+
+        self.assertEqual(no_cache["cache"]["hits"], 0)
+        self.assertGreater(predictive["prefetch"]["submitted"], 0)
+        self.assertGreater(predictive["prefetch"]["hits"], 0)
+        self.assertTrue(all(predictive["invariants"].values()))

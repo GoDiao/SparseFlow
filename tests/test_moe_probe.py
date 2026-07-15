@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover - depends on the execution environment
     torch = None
 
 from sparseflow.cache import ExpertCache
+from sparseflow.cache_policy import make_cache_policy
 from sparseflow.loader import ShardReader
 from sparseflow.moe_probe import (
     CachedExpertProvider,
@@ -413,6 +414,58 @@ class MoeProbeTest(unittest.TestCase):
                 self.assertEqual(stats["failed"], 1)
                 self.assertEqual(stats["completed"], 0)
                 self.assertEqual(provider._inflight, {})
+                provider.close()
+
+    def test_current_route_prefetch_reuses_transient_payload_when_admission_rejects(self):
+        with tempfile.TemporaryDirectory() as temp:
+            model = Path(temp)
+            (model / "config.json").write_text(
+                json.dumps(
+                    {
+                        "model_type": "qwen3_5_moe",
+                        "text_config": {
+                            "model_type": "qwen3_5_moe_text",
+                            "num_hidden_layers": 1,
+                            "num_experts": 2,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            write_bf16_shard(
+                model / "model.safetensors",
+                [
+                    ("model.language_model.layers.0.mlp.experts.gate_up_proj", (2, 6, 4)),
+                    ("model.language_model.layers.0.mlp.experts.down_proj", (2, 4, 3)),
+                ],
+            )
+            policy = make_cache_policy("heat", max_hot_entries=0)
+            cache = ExpertCache(max_bytes=1024, policy=policy)
+            with ShardReader() as reader:
+                provider = CachedExpertProvider(
+                    model,
+                    cache,
+                    reader,
+                    torch,
+                    prefetch_workers=1,
+                )
+                provider.begin_forward(0, "prefill")
+                selected = torch.tensor([[0, 1]], dtype=torch.long)
+                provider.observe_routes(0, selected)
+                provider.prepare(0, (0, 1))
+                provider.get(0, 0)
+                provider.get(0, 1)
+
+                expected = sum(
+                    provider.locator.locate(0, expert_id).nbytes
+                    for expert_id in (0, 1)
+                )
+                snapshot = provider.snapshot()
+                self.assertEqual(reader.read_bytes, expected)
+                self.assertEqual(snapshot["demand_read_bytes"], 0)
+                self.assertEqual(snapshot["demand_prefetch_served"], 2)
+                self.assertEqual(snapshot["transient_prefetch_entries"], 0)
+                self.assertEqual(cache.stats.admission_rejections, 2)
                 provider.close()
 
 
