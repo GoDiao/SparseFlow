@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from benchmarks.common import numeric_delta, parse_bytes, percentile
+from benchmarks.build_stage7_4_report import first_divergence
 from benchmarks.prepare_generic_offload import expected_dat_bytes
 from benchmarks.run_sparseflow import validate_cache_state
 from benchmarks.run_stage7_4_matrix import core_matrix
@@ -45,6 +46,11 @@ class Stage74CommonTest(unittest.TestCase):
 
     def test_generic_offload_size(self):
         self.assertEqual(expected_dat_bytes("BF16", [256, 1024]), 512 * 1024)
+
+    def test_first_divergence(self):
+        self.assertEqual(first_divergence([1, 2, 3], [1, 4, 3]), 1)
+        self.assertEqual(first_divergence([1, 2], [1, 2, 3]), 2)
+        self.assertIsNone(first_divergence([1, 2], [1, 2]))
 
 
 def _benchmark_result(variant: str, cache_bytes: int | None, reader_bytes: int):
