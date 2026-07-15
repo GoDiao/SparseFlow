@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,7 @@ def row_for(
 def build_summary(
     c3: dict[str, Any],
     c1: dict[str, Any],
-    c2_cold: dict[str, Any],
+    c2_cold_results: list[dict[str, Any]],
     c2_warm: dict[str, Any],
     calibration: dict[str, Any],
     io: dict[str, Any],
@@ -43,7 +44,9 @@ def build_summary(
 ) -> dict[str, Any]:
     reference_ids = c3["validation"]["reference_generated_ids"]
     c1_ids = c1["runs"][0]["output_token_ids"]
-    c2_cold_ids = c2_cold["runs"][0]["quality"]["generated_ids"]
+    c2_cold_runs = [
+        run for result in c2_cold_results for run in result["runs"]
+    ]
     c2_warm_ids = c2_warm["runs"][0]["quality"]["generated_ids"]
     c3_r = row_for(c3, "C3-R", 0, "workload-warm")
     c3_s0_warm = row_for(c3, "C3-S0", 0, "workload-warm")
@@ -52,29 +55,40 @@ def build_summary(
     c3_s3_cold = row_for(c3, "C3-S3", 4, "model-cold")
     c3_s4_cold = row_for(c3, "C3-S4", 4, "model-cold")
     c1_speed = c1["summary"]["median_decode_tokens_per_second"]
-    c2_cold_speed = c2_cold["summary"]["median_decode_tokens_per_second"]
+    c2_cold_speed = statistics.median(
+        run["timing"]["decode_tokens_per_second"] for run in c2_cold_runs
+    )
     c2_warm_speed = c2_warm["summary"]["median_decode_tokens_per_second"]
     model_hashes = {
         (source["model"]["config_sha256"], source["model"]["index_sha256"])
-        for source in (c1, c2_cold, c2_warm, calibration, io, offload)
+        for source in (c1, c2_warm, calibration, io, offload, *c2_cold_results)
     }
     model_hashes.update(tuple(value) for value in c3["validation"]["model_hashes"])
     evidence = {
         "c3_correctness_gate": c3["validation"]["all_invariants_pass"],
         "single_model_revision": len(model_hashes) == 1,
         "c1_clean": not c1["git"]["dirty"],
-        "c2_cold_clean": not c2_cold["git"]["dirty"],
+        "c2_cold_clean": all(
+            not result["git"]["dirty"] for result in c2_cold_results
+        ),
         "c2_warm_clean": not c2_warm["git"]["dirty"],
         "calibration_clean": not calibration["git"]["dirty"],
         "io_clean": not io["git"]["dirty"],
         "thread_calibration_exact": calibration["all_generated_ids_exact"],
         "c1_repeated_ids_exact": c1["summary"]["generated_ids_exact_across_runs"],
-        "c2_cold_prefix_matches_c3": c2_cold_ids == reference_ids[: len(c2_cold_ids)],
+        "c2_cold_prefix_matches_c3": all(
+            run["quality"]["generated_ids"]
+            == reference_ids[: len(run["quality"]["generated_ids"])]
+            for run in c2_cold_runs
+        ),
         "c2_warm_prefix_matches_c3": c2_warm_ids == reference_ids[: len(c2_warm_ids)],
         "offload_layout_complete": offload["index_complete"],
         "cold_page_eviction_complete": (
-            c2_cold["page_cache_control"]["supported"]
-            and not c2_cold["page_cache_control"]["failures"]
+            all(
+                result["page_cache_control"]["supported"]
+                and not result["page_cache_control"]["failures"]
+                for result in c2_cold_results
+            )
         ),
     }
     return {
@@ -88,7 +102,12 @@ def build_summary(
         "commits": {
             "c3_matrix": c3["validation"]["git_commits"],
             "c1_runner": c1["git"]["commit"],
-            "c2_runner": c2_cold["git"]["commit"],
+            "c2_runner": sorted(
+                {
+                    result["git"]["commit"]
+                    for result in c2_cold_results + [c2_warm]
+                }
+            ),
             "note": (
                 "C1/C2 benchmark-only fixes were committed after the frozen C3 matrix; "
                 "the C3 runtime/kernel source did not change."
@@ -125,13 +144,32 @@ def build_summary(
                 ),
             },
             "C2-cold": {
-                "output_tokens": c2_cold["workload"]["max_new_tokens"],
-                "samples": c2_cold["summary"]["run_count"],
-                "median_ttft_seconds": c2_cold["summary"]["median_ttft_seconds"],
+                "output_tokens": c2_cold_results[0]["workload"]["max_new_tokens"],
+                "samples": len(c2_cold_runs),
+                "median_ttft_seconds": statistics.median(
+                    run["timing"]["time_to_first_token_seconds"]
+                    for run in c2_cold_runs
+                ),
                 "median_decode_tokens_per_second": c2_cold_speed,
-                "peak_rss_bytes": c2_cold["summary"]["peak_rss_bytes"],
-                "process_read_bytes": c2_cold["runs"][0]["process_metrics_delta"][
-                    "read_bytes"
+                "peak_rss_bytes": max(
+                    run["memory"]["process_after"]["peak_rss_bytes"]
+                    for run in c2_cold_runs
+                ),
+                "median_process_read_bytes": statistics.median(
+                    run["process_metrics_delta"]["read_bytes"]
+                    for run in c2_cold_runs
+                ),
+                "min_process_read_bytes": min(
+                    run["process_metrics_delta"]["read_bytes"]
+                    for run in c2_cold_runs
+                ),
+                "max_process_read_bytes": max(
+                    run["process_metrics_delta"]["read_bytes"]
+                    for run in c2_cold_runs
+                ),
+                "raw_decode_tokens_per_second": [
+                    run["timing"]["decode_tokens_per_second"]
+                    for run in c2_cold_runs
                 ],
             },
             "C2-warm": {
@@ -232,7 +270,7 @@ def report(summary: dict[str, Any]) -> str:
             "C2 uses the same prompt but only two generated tokens because each generic",
             "forward scans the complete offloaded checkpoint. The measured per-token decode",
             "latency is direct; a 32-token cold C2 run was not executed because the observed",
-            "310.7-second decode step would make the matrix prohibitively long.",
+            "35.7–310.7-second decode steps would make the matrix prohibitively long.",
             "",
             "## Main findings",
             "",
@@ -276,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the Stage 7.4 system report.")
     parser.add_argument("--c3-summary", required=True)
     parser.add_argument("--c1", required=True)
-    parser.add_argument("--c2-cold", required=True)
+    parser.add_argument("--c2-cold", required=True, nargs="+")
     parser.add_argument("--c2-warm", required=True)
     parser.add_argument("--calibration", required=True)
     parser.add_argument("--io", required=True)
@@ -287,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
     summary = build_summary(
         load(args.c3_summary),
         load(args.c1),
-        load(args.c2_cold),
+        [load(path) for path in args.c2_cold],
         load(args.c2_warm),
         load(args.calibration),
         load(args.io),

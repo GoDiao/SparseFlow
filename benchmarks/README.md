@@ -127,6 +127,14 @@ PYTHONPATH=src python -m benchmarks.run_generic_offload \
 runner、实验与报告由 `[Main Dev]` 记录；本目录原有规范所有者仍为
 `[Benchmark]`。
 
+已完成的正式结果入口：
+
+~~~text
+benchmarks/results/2026-07-15/stage7_4/report.md
+benchmarks/results/2026-07-15/stage7_4/system_summary.json
+benchmarks/results/2026-07-15/stage7_4/c3_raw/
+~~~
+
 ## 结果与身份规范
 
 raw results 放在 `benchmarks/results/`，并进入 Git，保证本机、试验机和

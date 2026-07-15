@@ -606,3 +606,26 @@ Main Dev 负责的 runtime、ExpertLocator、cache 和 kernel 实现统一使用
 `[Main Dev][Benchmark]`。
 
 本规范变更由 [Benchmark] 执行。
+
+## 18. Stage 7.4 observed closure
+
+Stage 7.4 BF16 performance/correctness matrix 已由 Main Dev 在冻结 runtime 上
+执行完成。正式证据入口为：
+
+~~~text
+benchmarks/results/2026-07-15/stage7_4/report.md
+benchmarks/results/2026-07-15/stage7_4/system_summary.json
+benchmarks/results/2026-07-15/stage7_4/c3_raw/
+~~~
+
+执行使用 10 threads、固定 core prompt、32-token C3 decode、warmup=1、
+measured=3、1/2/4/8 GiB cache sweep，以及三次独立 model-cold S0/S3/S4
+样本。C3 的 32-step logits、route、IDs 和 storage invariants 全部通过。
+
+C2 generic offload 只完成 2-token cold/warm 基线：三次 cold TTFT 中位
+308.8 秒，单 decode 在 35.7–310.7 秒之间，request 实际块读取为
+64.56–128.43 GiB，因此没有伪造或外推 32-token raw sample。报告将该结果
+明确标为短序列系统基线。Colibri-style task quality
+ladder 仍属于独立 Benchmark workstream；BF16 streaming correctness 已由
+同-kernel 完整 logits gate 覆盖，INT8/INT4 quality matrix 在 Stage 7.5 后
+执行。[Main Dev]

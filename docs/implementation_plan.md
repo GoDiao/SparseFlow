@@ -232,6 +232,34 @@ prefetch-served 且没有重复读取。结果见
 重复次数和统计口径，正式执行 C1/C2/C3-R/C3-S0..S4 Benchmark。Stage 7.3
 的单次 wall time 仅作为开发观测，不作为正式性能结论。[Main Dev]
 
+### Phase 7.4 status: formal BF16 Benchmark complete
+
+已冻结 10 CPU threads、41-token 核心 prompt、32-token greedy decode、一次
+warmup + 三次 measured、1/2/4/8 GiB budgets，以及 model-cold/workload-warm
+状态。27-cell C3 矩阵运行约 2.41 小时；全部结果来自 clean worktree，并通过
+同一模型 revision、同一 runtime/kernel identity、32-step 完整 logits、route、
+generated IDs、cache budget、demand accounting 和 prefetch failure 门禁。
+
+主要结果：C3-R 为 2.9618 tok/s、66.355 GiB RSS；当前 Python runtime 的最佳
+warm 点是 C3-S1 LRU 8 GiB，为 0.8263 tok/s、13.651 GiB RSS、701.61 MiB
+expert read/decode token。C3-S0 model-cold/workload-warm 分别为 0.3725 /
+0.4752 tok/s。C3-S4 4 GiB cold 比 S3 快 1.17x，但复杂 policy/prefetch 在
+warm Python 路径中仍不及基础 LRU。
+
+C1 Transformers resident 为 2.9595 tok/s、67.074 GiB RSS。C2 Accelerate
+generic offload 的两-token基线在 model-cold / workload-warm 下分别为
+0.02567 / 0.02794 tok/s；C3-S1 8 GiB 比 warm C2 快 29.6x。三次 cold C2
+的 TTFT 中位为 308.8 秒，单 decode 在 35.7–310.7 秒之间；C2 只运行两
+token 是因为每个 generic forward 扫描完整 checkpoint。该限制在报告中
+明确保留，未外推成伪造的 32-token 样本。
+
+完整报告和 40 MiB raw evidence 位于
+`benchmarks/results/2026-07-15/stage7_4/`。[Main Dev]
+
+下一步进入 Phase 7.5：保留 Stage 7.4 的 workload/schema/correctness gate，
+优先实现 INT8 expert storage/decode 与 AVX-512 VNNI native kernel，再重跑同一
+resident/streaming 矩阵。不得把量化误差归因于 streaming。[Main Dev]
+
 ## Early Non-goals
 
 - 阶段 6 暂不支持 vision 输入、MTP/speculative decoding 和生产级 serving。
