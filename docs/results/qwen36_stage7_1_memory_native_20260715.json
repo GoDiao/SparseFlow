@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "kind": "qwen36_stage7_1_memory_native_acceptance",
+  "agent": "Main Dev",
+  "model": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+  "environment": {
+    "cpu": "Intel Xeon Gold 6248R, 10 physical cores / 20 logical CPUs",
+    "ram": "125 GiB",
+    "gpu": "2 x Tesla V100S 32GB; model kept on CPU",
+    "pytorch": "2.9.1+cu128",
+    "transformers": "5.14.0.dev0",
+    "accelerate": "1.14.0",
+    "safetensors": "0.8.0",
+    "dtype": "bfloat16",
+    "page_cache": "not controlled; functional warm-cache sample"
+  },
+  "checkpoint_plan": {
+    "total_tensors": 1045,
+    "resident_tensors": 613,
+    "resident_bytes": 4896711936,
+    "streamed_expert_tensors": 80,
+    "streamed_expert_bytes": 64424509440,
+    "mtp_tensors_skipped": 19,
+    "mtp_bytes_skipped": 1689281536,
+    "vision_tensors_skipped": 333,
+    "vision_bytes_skipped": 893142496,
+    "payload_bytes_read_while_planning": 0
+  },
+  "meta_build": {
+    "state_tensors": 613,
+    "meta_parameters_before_load": 613,
+    "meta_buffers_before_load": 2,
+    "routed_expert_parameters": 0,
+    "payload_bytes_read": 0
+  },
+  "selective_load": {
+    "loaded_tensors": 613,
+    "source_payload_bytes_read": 4896711936,
+    "materialized_bytes": 4896711936,
+    "expert_payload_bytes_during_init": 0,
+    "expert_reader_calls_after_init": 0,
+    "expert_reader_bytes_after_init": 0,
+    "remaining_meta_parameters": 0,
+    "remaining_meta_buffers": 0,
+    "routed_expert_parameters": 0
+  },
+  "standalone_four_token_generation": {
+    "command": "sparseflow text-generate <model> --mode streaming --load-mode memory-native --dtype bf16 --prompt test --max-new-tokens 4 --cache-slots 16 --json",
+    "input_tokens": 11,
+    "generated_ids": [8160, 579, 264, 7047],
+    "text": "Here's a thinking",
+    "prefill_seconds": 13.143877152000186,
+    "decode_seconds": 7.63396642600037,
+    "decode_token_seconds": [
+      1.5763139840000804,
+      2.7163712740002666,
+      3.341281168000023
+    ],
+    "memory": {
+      "rss_before_materialize": 920580096,
+      "rss_after_materialize": 5754114048,
+      "process_peak_rss_at_materialize_end": 6833156096,
+      "rss_before_prefill": 5757333504,
+      "rss_after_generation": 9895874560,
+      "process_peak_rss": 9895874560
+    },
+    "cache": {
+      "capacity_per_layer": 16,
+      "requests": 2591,
+      "hits": 300,
+      "misses": 2291,
+      "hit_rate": 0.11578541103820919,
+      "evictions": 1651,
+      "loaded_bytes": 14413725696,
+      "cached_bytes": 4026531840,
+      "cache_entries": 640
+    }
+  },
+  "four_step_correctness": {
+    "command": "sparseflow text-check <model> --streaming-loader memory-native --dtype bf16 --prompt test --max-new-tokens 4 --cache-slots 16 --json",
+    "resident_and_memory_native_generated_ids_equal": true,
+    "resident_and_memory_native_text_equal": true,
+    "logit_fingerprints_equal": true,
+    "logit_shape_per_step": [1, 248320],
+    "logit_sha256": [
+      "91d94b782fe445f01d2168dec2fc678af5c55f3ff75dc7d49afd453c6bfb6cc4",
+      "3a9844455d91fb6ea4d7fe9a66581681e78b1264718c443edc7c24246a19c883",
+      "6f7171a078b52f308324623728f576312e1395c1183522c43dfe1c1a4eefcb8f",
+      "5ffc284577045869e4d4110a5aa067028037cefa5ba661eae2e47ca77ad7b60c"
+    ],
+    "all_equal": true
+  },
+  "prefetch_correctness": {
+    "command": "sparseflow text-check <model> --streaming-loader memory-native --dtype bf16 --prompt test --max-new-tokens 2 --cache-slots 16 --prefetch-workers 2 --coalesce-gap 0 --json",
+    "logit_fingerprints_equal": true,
+    "all_equal": true,
+    "submitted": 1851,
+    "batches": 80,
+    "completed": 80,
+    "failed": 0,
+    "waits": 80,
+    "prefetched_experts": 1851,
+    "prefetched_bytes": 11645485056,
+    "coalesced_ranges": 3186,
+    "logical_ranges": 3702,
+    "physical_bytes": 11645485056,
+    "useful_bytes": 11645485056,
+    "wasted_bytes": 0
+  },
+  "acceptance": {
+    "plan_is_header_only": true,
+    "experts_replaced_before_payload_load": true,
+    "expert_payload_read_during_init_is_zero": true,
+    "no_full_expert_parameters_exist": true,
+    "no_meta_tensors_remain_after_load": true,
+    "standalone_generation_succeeds": true,
+    "standalone_peak_rss_below_10_gib": true,
+    "four_step_full_logits_exact": true,
+    "prefetch_full_logits_exact": true,
+    "stage7_1_complete": true
+  }
+}

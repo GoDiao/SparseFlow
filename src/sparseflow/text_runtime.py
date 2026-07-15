@@ -10,7 +10,9 @@ from .cache import ExpertCache
 from .loader import ShardReader
 from .memory_loader import (
     build_qwen36_meta_text_model,
+    current_rss_bytes,
     materialize_qwen36_text_model,
+    peak_rss_bytes,
 )
 from .moe_probe import CachedExpertProvider, run_routed_experts
 
@@ -160,6 +162,9 @@ class Qwen36TextRuntime:
                 provider.close()
                 reader.close()
                 raise
+            loader_report = materialized.as_dict()
+            loader_report["expert_reader_calls_after_init"] = reader.read_calls
+            loader_report["expert_reader_bytes_after_init"] = reader.read_bytes
             return cls(
                 materialized.model,
                 tokenizer,
@@ -172,7 +177,7 @@ class Qwen36TextRuntime:
                 prefetch_workers=prefetch_workers,
                 experts_implementation="eager",
                 load_mode="memory-native",
-                loader_report=materialized.as_dict(),
+                loader_report=loader_report,
             )
 
         model = AutoModelForImageTextToText.from_pretrained(
@@ -313,6 +318,7 @@ class Qwen36TextRuntime:
         inputs = self.encode_chat(prompt)
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask", self.torch.ones_like(input_ids))
+        rss_before_prefill = current_rss_bytes()
 
         prefill_started = time.perf_counter()
         first = self.prefill(inputs)
@@ -368,6 +374,11 @@ class Qwen36TextRuntime:
             "cache": self.cache.stats_dict() if self.cache is not None else None,
             "prefetch": self.provider.prefetch_stats() if self.provider is not None else None,
             "loader": self.loader_report,
+            "memory": {
+                "rss_before_prefill": rss_before_prefill,
+                "rss_after_generation": current_rss_bytes(),
+                "process_peak_rss": peak_rss_bytes(),
+            },
         }
 
     def close(self) -> None:

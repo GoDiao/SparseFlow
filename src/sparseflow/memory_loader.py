@@ -129,6 +129,9 @@ class MaterializedTextModel:
     source_payload_bytes_read: int
     materialized_bytes: int
     load_seconds: float
+    rss_before_materialize: int
+    rss_after_materialize: int
+    process_peak_rss_at_materialize_end: int
 
     def as_dict(self) -> dict[str, Any]:
         remaining_meta_parameters = tuple(
@@ -155,6 +158,14 @@ class MaterializedTextModel:
                 ".mlp.experts." in name for name, _ in self.model.named_parameters()
             ),
             "load_seconds": self.load_seconds,
+            "rss_before_materialize": self.rss_before_materialize,
+            "rss_after_materialize": self.rss_after_materialize,
+            "rss_materialize_delta": max(
+                0, self.rss_after_materialize - self.rss_before_materialize
+            ),
+            "process_peak_rss_at_materialize_end": (
+                self.process_peak_rss_at_materialize_end
+            ),
         }
 
 
@@ -220,6 +231,7 @@ def materialize_meta_text_model(
     source_bytes = 0
     materialized_bytes = 0
     started = time.perf_counter()
+    rss_before = current_rss_bytes()
     for shard, entries in sorted(resident_by_shard.items(), key=lambda item: str(item[0])):
         with safe_open(str(shard), framework="pt", device="cpu") as handle:
             available = set(handle.keys())
@@ -267,6 +279,9 @@ def materialize_meta_text_model(
         source_payload_bytes_read=source_bytes,
         materialized_bytes=materialized_bytes,
         load_seconds=time.perf_counter() - started,
+        rss_before_materialize=rss_before,
+        rss_after_materialize=current_rss_bytes(),
+        process_peak_rss_at_materialize_end=peak_rss_bytes(),
     )
 
 
@@ -300,6 +315,27 @@ def _audit_materialized_model(materialized: MaterializedTextModel) -> None:
         )
     if materialized.source_payload_bytes_read != materialized.plan.bytes_for("resident"):
         raise ValueError("resident source-byte count does not match memory load plan")
+
+
+def current_rss_bytes() -> int:
+    status = Path("/proc/self/status")
+    if status.is_file():
+        for line in status.read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) * 1024
+    return peak_rss_bytes()
+
+
+def peak_rss_bytes() -> int:
+    try:
+        import resource
+        import sys
+
+        value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        # Linux reports KiB; macOS reports bytes.
+        return value if sys.platform == "darwin" else value * 1024
+    except (ImportError, ValueError):
+        return 0
 
 
 def prepare_qwen36_meta_text_model(

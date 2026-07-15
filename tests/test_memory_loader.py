@@ -157,6 +157,11 @@ class MemoryLoadPlanTest(unittest.TestCase):
             self.assertEqual(load_result["expert_payload_bytes_during_init"], 0)
             self.assertEqual(load_result["remaining_meta_parameters"], 0)
             self.assertEqual(load_result["routed_expert_parameters"], 0)
+            self.assertGreaterEqual(load_result["rss_after_materialize"], 0)
+            self.assertGreaterEqual(
+                load_result["process_peak_rss_at_materialize_end"],
+                0,
+            )
             self.assertTrue(
                 all(not parameter.is_meta for parameter in materialized.model.parameters())
             )
