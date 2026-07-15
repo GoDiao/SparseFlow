@@ -138,13 +138,16 @@ def main(argv: list[str] | None = None) -> int:
     load_started = time.perf_counter()
     tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True, use_fast=True)
     config = AutoConfig.from_pretrained(model_dir, local_files_only=True)
-    with init_empty_weights(include_buffers=True):
+    # Checkpoint parameters live in Accelerate's disk map. Small deterministic
+    # buffers such as rotary ``inv_freq`` are not checkpoint entries and must
+    # be constructed normally on CPU rather than left unresolved on meta.
+    with init_empty_weights(include_buffers=False):
         model = AutoModelForImageTextToText.from_config(config)
     model = disk_offload(
         model,
         offload_dir,
         execution_device=torch.device("cpu"),
-        offload_buffers=True,
+        offload_buffers=False,
         preload_module_classes=["Qwen3_5MoeExperts"],
     ).eval()
     result["load"] = {
