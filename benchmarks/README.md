@@ -73,6 +73,60 @@ python3 -m benchmarks.score_choices \
 
 开发集和正式集必须在 `benchmarks/data/` 中冻结，并记录数据 manifest hash。
 
+## Stage 7.4 SparseFlow 正式矩阵
+
+Stage 7.4 使用独立的 C3 runner，不修改 Stage 7.3 已冻结的模型/kernel 路径：
+
+~~~bash
+PYTHONPATH=src python -m benchmarks.run_sparseflow \
+  --model model/Qwen3.6-35B-A3B \
+  --manifest benchmarks/manifests/stage7_4_core.jsonl \
+  --variant C3-S4 --cache-bytes 4GiB \
+  --cache-state workload-warm --warmup 1 --runs 3 \
+  --threads 10 --max-new-tokens 32 \
+  --output /tmp/stage7_4/c3-s4-4g-workload-warm.json
+~~~
+
+冻结的 C3 核心矩阵包含 C3-R、S0、S1-S4 的 1/2/4/8 GiB sweep，以及
+S0/S3/S4 各三次独立 `model-cold` 样本：
+
+~~~bash
+PYTHONPATH=src python -m benchmarks.run_stage7_4_matrix \
+  --output-dir /tmp/stage7_4 --threads 10 --max-new-tokens 32
+~~~
+
+`model-cold` 使用模型局部 `POSIX_FADV_DONTNEED`，并在新进程中运行；
+`workload-warm` 在同一进程先执行一次固定 prompt warmup，再保留三次 raw
+measurement。结果汇总命令：
+
+~~~bash
+PYTHONPATH=src python -m benchmarks.summarize_stage7_4 \
+  --input-dir /tmp/stage7_4 \
+  --output-json /tmp/stage7_4-summary.json \
+  --output-md /tmp/stage7_4-report.md
+~~~
+
+C2 generic disk offload 需要一次性生成 Accelerate offload layout。它在
+`.cache/` 下占用约 67 GiB，不进入 Git：
+
+~~~bash
+PYTHONPATH=src python -m benchmarks.prepare_generic_offload \
+  --model model/Qwen3.6-35B-A3B \
+  --offload-dir .cache/stage7_4/generic-offload
+
+PYTHONPATH=src python -m benchmarks.run_generic_offload \
+  --model model/Qwen3.6-35B-A3B \
+  --offload-dir .cache/stage7_4/generic-offload \
+  --cache-state model-cold --warmup 0 --runs 1 \
+  --max-new-tokens 2 --threads 10 \
+  --output /tmp/stage7_4-c2.json
+~~~
+
+线程校准和 buffered expert I/O 微基准分别由
+`calibrate_stage7_4_threads.py` 与 `io_stage7_4.py` 执行。新增 Stage 7.4
+runner、实验与报告由 `[Main Dev]` 记录；本目录原有规范所有者仍为
+`[Benchmark]`。
+
 ## 结果与身份规范
 
 raw results 放在 `benchmarks/results/`，并进入 Git，保证本机、试验机和
@@ -86,3 +140,5 @@ Git；固定 manifest 放在 `benchmarks/manifests/`。
 ~~~
 
 本框架设计和本文件由 [Benchmark] 执行。
+
+Stage 7.4 C3/C2 runner、矩阵调度、I/O 校准及汇总说明由 [Main Dev] 补充。

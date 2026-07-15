@@ -1,0 +1,5 @@
+{"id":"core-zh-moe","group":"core","category":"chinese","text":"请从工程角度简要说明稀疏专家模型中路由器、专家缓存和固态硬盘读取之间的关系，并指出缓存命中率为什么会影响逐 token 推理延迟。"}
+{"id":"core-en-moe","group":"diversity","category":"english","text":"Explain how expert routing, RAM cache capacity, and SSD bandwidth interact in a tiered-memory mixture-of-experts inference runtime."}
+{"id":"core-code","group":"diversity","category":"code","text":"Write a compact Python LRU cache with get and put methods, then explain the eviction invariant in two sentences."}
+{"id":"core-math","group":"diversity","category":"math","text":"A model activates eight 6 MiB experts in each of forty layers. Calculate the cold expert bytes required per token and show the steps."}
+{"id":"core-locality","group":"locality","category":"conversation","text":"Continue our design review of a tiered-memory MoE runtime. Compare a 2 GiB expert cache with an 8 GiB cache, focusing on locality, disk reads, and latency."}

@@ -16,6 +16,7 @@ from .common import (
     host_snapshot,
     model_snapshot,
     now,
+    percentile,
     process_snapshot,
     sha256_text,
     write_json,
@@ -203,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     manifest_lines = manifest_path.read_text(encoding="utf-8").splitlines(keepends=True)
     result: dict[str, Any] = {
         "schema_version": 2,
+        "stage": "7.4",
+        "agent": "Main Dev",
+        "workstream_owner": "Benchmark",
         "experiment_id": f"cpu-resident-{args.dtype}",
         "backend": "transformers_cpu_resident",
         "started_utc": datetime.now(timezone.utc).isoformat(),
@@ -228,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
             "prefill_always_measured": True,
             "measure_prefill_compat_flag": args.measure_prefill,
             "batch_size": 1,
+            "cache_state": "resident-workload-warm" if args.warmup else "resident-app-cold",
         },
         "load": {},
         "runs": [],
@@ -351,6 +356,26 @@ def main(argv: list[str] | None = None) -> int:
         if decode_speeds
         else None,
         "median_end_to_end_tokens_per_second": statistics.median(end_to_end_speeds),
+        "decode_latency_p50_seconds": percentile(
+            [
+                value
+                for item in result["runs"]
+                for value in item["decode_token_seconds"]
+            ],
+            0.50,
+        ),
+        "decode_latency_p95_seconds": percentile(
+            [
+                value
+                for item in result["runs"]
+                for value in item["decode_token_seconds"]
+            ],
+            0.95,
+        ),
+        "generated_ids_exact_across_runs": len(
+            {tuple(item["output_token_ids"]) for item in result["runs"]}
+        )
+        == 1,
         "peak_rss_bytes": max(
             [result["load"]["metrics_delta"].get("peak_rss_bytes", 0)]
             + [item["metrics_delta"].get("peak_rss_bytes", 0) for item in result["runs"]]
@@ -365,3 +390,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# Stage 7.4 result attribution and percentile metrics: [Main Dev]
