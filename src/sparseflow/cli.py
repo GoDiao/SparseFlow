@@ -186,6 +186,11 @@ def main(argv: list[str] | None = None) -> int:
     text_p.add_argument("model")
     text_p.add_argument("--prompt", required=True)
     text_p.add_argument("--mode", choices=("resident", "streaming"), default="streaming")
+    text_p.add_argument(
+        "--load-mode",
+        choices=("transformers", "memory-native"),
+        default="transformers",
+    )
     text_p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
     text_p.add_argument(
         "--experts-implementation",
@@ -208,6 +213,11 @@ def main(argv: list[str] | None = None) -> int:
     text_check_p.add_argument("model")
     text_check_p.add_argument("--prompt", required=True)
     text_check_p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
+    text_check_p.add_argument(
+        "--streaming-loader",
+        choices=("transformers", "memory-native"),
+        default="transformers",
+    )
     text_check_p.add_argument("--max-new-tokens", type=int, default=8)
     text_check_p.add_argument("--cache-slots", type=int, default=16)
     text_check_p.add_argument("--cache-bytes", help="Global byte budget, e.g. 4GiB.")
@@ -377,6 +387,7 @@ def main(argv: list[str] | None = None) -> int:
                 prefetch_workers=args.prefetch_workers,
                 coalesce_gap=args.coalesce_gap,
                 experts_implementation=args.experts_implementation,
+                load_mode=args.load_mode,
             ) as runtime:
                 result = runtime.greedy_generate(
                     args.prompt,
@@ -400,6 +411,7 @@ def main(argv: list[str] | None = None) -> int:
                 cache_bytes=cache_bytes,
                 prefetch_workers=args.prefetch_workers,
                 coalesce_gap=args.coalesce_gap,
+                streaming_load_mode=args.streaming_loader,
             )
             encoded = json.dumps(result, indent=2, ensure_ascii=False)
             if args.output:
@@ -630,6 +642,7 @@ def _format_text_generate(result: dict[str, Any]) -> str:
         f"SparseFlow text-generate: {result['mode']}",
         f"input tokens       {len(result['input_ids'])}",
         f"generated tokens   {result['generated_tokens']}",
+        f"load mode           {result['load_mode']}",
         f"expert kernel      {result['experts_implementation']}",
         f"prefill seconds    {result['prefill_seconds']:.3f}",
         f"decode seconds     {result['decode_seconds']:.3f}",

@@ -176,6 +176,33 @@ class TextRuntimeTest(unittest.TestCase):
             [call.kwargs["experts_implementation"] for call in run_path.call_args_list],
             ["eager", "eager"],
         )
+        self.assertEqual(run_path.call_args_list[0].kwargs["load_mode"], "transformers")
+        self.assertEqual(run_path.call_args_list[1].kwargs["load_mode"], "transformers")
+
+    def test_text_check_routes_streaming_through_memory_native_loader(self):
+        result = {
+            "input_ids": [1],
+            "generated_ids": [2],
+            "generated_tokens": 1,
+            "text": "ok",
+            "logit_fingerprints": [{"sha256": "same"}],
+        }
+        with patch(
+            "sparseflow.text_runtime._run_text_path",
+            side_effect=[(dict(result), 1.0), (dict(result), 2.0)],
+        ) as run_path:
+            comparison = compare_text_paths(
+                "/tmp/model",
+                "hello",
+                max_new_tokens=1,
+                streaming_load_mode="memory-native",
+            )
+        self.assertTrue(comparison["correctness"]["all_equal"])
+        self.assertEqual(comparison["streaming_load_mode"], "memory-native")
+        self.assertEqual(
+            run_path.call_args_list[1].kwargs["load_mode"],
+            "memory-native",
+        )
 
 
 if __name__ == "__main__":

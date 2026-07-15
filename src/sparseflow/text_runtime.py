@@ -8,6 +8,10 @@ from typing import Any
 
 from .cache import ExpertCache
 from .loader import ShardReader
+from .memory_loader import (
+    build_qwen36_meta_text_model,
+    materialize_qwen36_text_model,
+)
 from .moe_probe import CachedExpertProvider, run_routed_experts
 
 
@@ -54,9 +58,9 @@ class Qwen36TextRuntime:
     Transformers reference.  In ``streaming`` mode, every Qwen3.6 routed
     expert module is replaced with :class:`SparseFlowQwenExperts`, so the
     complete model forward uses SparseFlow's SSD/cache path for MoE experts.
-    The first implementation loads the official checkpoint before replacing
-    the routed modules; this is a correctness/integration reference, not yet
-    the final low-peak-memory loader.
+    ``transformers`` load mode keeps the Stage 6 reference behavior.  The
+    ``memory-native`` mode builds a text-only meta model, installs streaming
+    experts first, and materializes only resident checkpoint tensors.
     """
 
     def __init__(
@@ -71,6 +75,8 @@ class Qwen36TextRuntime:
         provider: CachedExpertProvider | None = None,
         prefetch_workers: int = 0,
         experts_implementation: str = "eager",
+        load_mode: str = "transformers",
+        loader_report: dict[str, Any] | None = None,
     ):
         if mode not in {"resident", "streaming"}:
             raise ValueError("mode must be resident or streaming")
@@ -84,6 +90,8 @@ class Qwen36TextRuntime:
         self.provider = provider
         self.prefetch_workers = prefetch_workers
         self.experts_implementation = experts_implementation
+        self.load_mode = load_mode
+        self.loader_report = loader_report
 
     @classmethod
     def from_pretrained(
@@ -97,6 +105,7 @@ class Qwen36TextRuntime:
         prefetch_workers: int = 0,
         coalesce_gap: int = 0,
         experts_implementation: str | None = None,
+        load_mode: str = "transformers",
     ) -> "Qwen36TextRuntime":
         import torch
         from transformers import AutoModelForImageTextToText, AutoTokenizer
@@ -109,6 +118,10 @@ class Qwen36TextRuntime:
         }.get(dtype.lower())
         if dtype_value is None:
             raise ValueError("dtype must be bf16, fp16, or fp32")
+        if load_mode not in {"transformers", "memory-native"}:
+            raise ValueError("load_mode must be transformers or memory-native")
+        if load_mode == "memory-native" and mode != "streaming":
+            raise ValueError("memory-native loading currently requires streaming mode")
         if mode == "streaming" and experts_implementation not in {None, "eager"}:
             raise ValueError("SparseFlow streaming currently implements eager expert arithmetic")
         if device_map is None:
@@ -118,6 +131,50 @@ class Qwen36TextRuntime:
             local_files_only=True,
             use_fast=True,
         )
+        if load_mode == "memory-native":
+            if device_map != {"": "cpu"} and device_map != "cpu":
+                raise ValueError("memory-native loading currently requires CPU model placement")
+            if cache_slots is None and cache_bytes is None:
+                cache_slots = 16
+            reader = ShardReader()
+            cache = ExpertCache(capacity_per_layer=cache_slots, max_bytes=cache_bytes)
+            provider = CachedExpertProvider(
+                root,
+                cache,
+                reader,
+                torch,
+                prefetch_workers=prefetch_workers,
+                coalesce_gap=coalesce_gap,
+            )
+            try:
+                build = build_qwen36_meta_text_model(
+                    root,
+                    expert_factory=lambda layer: SparseFlowQwenExperts(
+                        layer,
+                        provider,
+                        prefetch_workers > 0,
+                    ),
+                )
+                materialized = materialize_qwen36_text_model(build, dtype=dtype)
+            except Exception:
+                provider.close()
+                reader.close()
+                raise
+            return cls(
+                materialized.model,
+                tokenizer,
+                torch,
+                root,
+                mode="streaming",
+                reader=reader,
+                cache=cache,
+                provider=provider,
+                prefetch_workers=prefetch_workers,
+                experts_implementation="eager",
+                load_mode="memory-native",
+                loader_report=materialized.as_dict(),
+            )
+
         model = AutoModelForImageTextToText.from_pretrained(
             root,
             local_files_only=True,
@@ -142,6 +199,8 @@ class Qwen36TextRuntime:
                 root,
                 mode="resident",
                 experts_implementation=active_experts,
+                load_mode="transformers",
+                loader_report={"mode": "transformers-full"},
             )
 
         if device_map != {"": "cpu"} and device_map != "cpu":
@@ -172,11 +231,18 @@ class Qwen36TextRuntime:
             provider=provider,
             prefetch_workers=prefetch_workers,
             experts_implementation="eager",
+            load_mode="transformers",
+            loader_report={"mode": "transformers-full-then-replace"},
         )
 
     @staticmethod
     def _attach_streaming_experts(model, provider: CachedExpertProvider, prefetch: bool) -> None:
-        layers = model.model.language_model.layers
+        language_model = model.model
+        layers = (
+            language_model.language_model.layers
+            if hasattr(language_model, "language_model")
+            else language_model.layers
+        )
         for layer_index, decoder_layer in enumerate(layers):
             decoder_layer.mlp.experts = SparseFlowQwenExperts(
                 layer_index,
@@ -288,6 +354,7 @@ class Qwen36TextRuntime:
         )
         return {
             "mode": self.mode,
+            "load_mode": self.load_mode,
             "experts_implementation": self.experts_implementation,
             "prompt": prompt,
             "input_ids": input_ids[0].tolist(),
@@ -300,6 +367,7 @@ class Qwen36TextRuntime:
             "logit_fingerprints": logit_fingerprints,
             "cache": self.cache.stats_dict() if self.cache is not None else None,
             "prefetch": self.provider.prefetch_stats() if self.provider is not None else None,
+            "loader": self.loader_report,
         }
 
     def close(self) -> None:
@@ -324,6 +392,7 @@ def compare_text_paths(
     cache_bytes: int | None = None,
     prefetch_workers: int = 0,
     coalesce_gap: int = 0,
+    streaming_load_mode: str = "transformers",
 ) -> dict[str, Any]:
     """Run resident and streaming text generation as a reproducible gate.
 
@@ -345,6 +414,7 @@ def compare_text_paths(
         mode="resident",
         dtype=dtype,
         experts_implementation="eager",
+        load_mode="transformers",
     )
     gc.collect()
 
@@ -359,6 +429,7 @@ def compare_text_paths(
         prefetch_workers=prefetch_workers,
         coalesce_gap=coalesce_gap,
         experts_implementation="eager",
+        load_mode=streaming_load_mode,
     )
     comparison = compare_generation_results(resident, streaming)
     return {
@@ -370,6 +441,7 @@ def compare_text_paths(
         "max_new_tokens": max_new_tokens,
         "dtype": dtype,
         "experts_implementation": "eager",
+        "streaming_load_mode": streaming_load_mode,
         "cache_policy": {
             "capacity_per_layer": cache_slots,
             "max_bytes": cache_bytes,
@@ -386,8 +458,12 @@ def compare_text_paths(
         },
         "correctness": comparison,
         "boundary": (
-            "text-only Python reference; checkpoint is loaded by Transformers "
-            "before routed experts are replaced"
+            "text-only memory-native streaming; routed experts were never fully materialized"
+            if streaming_load_mode == "memory-native"
+            else (
+                "text-only Python reference; checkpoint is loaded by Transformers "
+                "before routed experts are replaced"
+            )
         ),
     }
 
@@ -438,6 +514,7 @@ def _run_text_path(
     prefetch_workers: int = 0,
     coalesce_gap: int = 0,
     experts_implementation: str | None = None,
+    load_mode: str = "transformers",
 ) -> tuple[dict[str, Any], float]:
     load_started = time.perf_counter()
     runtime = Qwen36TextRuntime.from_pretrained(
@@ -449,6 +526,7 @@ def _run_text_path(
         prefetch_workers=prefetch_workers,
         coalesce_gap=coalesce_gap,
         experts_implementation=experts_implementation,
+        load_mode=load_mode,
     )
     load_seconds = time.perf_counter() - load_started
     try:
