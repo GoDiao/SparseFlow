@@ -18,7 +18,7 @@ from .benchmark import (
 from .bytes import format_bytes
 from .loader import load_expert_raw
 from .locator import ExpertLocator
-from .memory_loader import build_memory_load_plan
+from .memory_loader import build_memory_load_plan, build_qwen36_meta_text_model
 from .moe_probe import compare_expert_paths, compare_moe_cache_paths, compare_moe_paths
 from .moe_runtime import compare_multilayer_moe_paths
 from .text_runtime import Qwen36TextRuntime, compare_text_paths
@@ -54,6 +54,13 @@ def main(argv: list[str] | None = None) -> int:
     native_plan_p.add_argument("model")
     native_plan_p.add_argument("--entries", action="store_true", help="Include every tensor mapping.")
     native_plan_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    native_meta_p = sub.add_parser(
+        "native-meta",
+        help="Build the Qwen3.6 text runtime on meta device with experts removed.",
+    )
+    native_meta_p.add_argument("model")
+    native_meta_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
 
     for command, help_text in (
         ("expert-stat", "Locate one fused expert without reading its payload."),
@@ -214,6 +221,14 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(result, indent=2, ensure_ascii=False)
                 if args.json
                 else _format_native_plan(result)
+            )
+            return 0
+        if args.command == "native-meta":
+            result = build_qwen36_meta_text_model(args.model).as_dict()
+            print(
+                json.dumps(result, indent=2, ensure_ascii=False)
+                if args.json
+                else _format_native_meta(result)
             )
             return 0
         if args.command == "expert-stat":
@@ -436,6 +451,19 @@ def _format_native_plan(result: dict[str, Any]) -> str:
             f"skip MTP     {format_bytes(reasons.get('mtp', 0))}",
             f"skip vision  {format_bytes(reasons.get('vision', 0))}",
             f"payload read {format_bytes(result['payload_bytes_read'])}",
+        ]
+    )
+
+
+def _format_native_meta(result: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            f"SparseFlow native-meta: {result['model']}",
+            f"state tensors      {result['state_tensors']}",
+            f"meta parameters    {result['meta_parameters']}",
+            f"meta buffers       {result['meta_buffers']}",
+            f"expert parameters  {result['routed_expert_parameters']}",
+            f"payload read       {format_bytes(result['payload_bytes_read'])}",
         ]
     )
 

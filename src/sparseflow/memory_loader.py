@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from .analyze import load_config
 from .safetensors import ShardIndex, TensorSpan
@@ -88,6 +88,135 @@ class MemoryLoadPlan:
         if include_entries:
             result["entries"] = [entry.as_dict() for entry in self.entries]
         return result
+
+
+@dataclass
+class MetaTextModelBuild:
+    model: Any
+    plan: MemoryLoadPlan
+    state_keys: tuple[str, ...]
+    meta_parameter_names: tuple[str, ...]
+    meta_buffer_names: tuple[str, ...]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "kind": "memory_native_meta_build",
+            "agent": "Main Dev",
+            "model": str(self.plan.model_dir),
+            "adapter": self.plan.adapter,
+            "payload_bytes_read": 0,
+            "state_tensors": len(self.state_keys),
+            "meta_parameters": len(self.meta_parameter_names),
+            "meta_buffers": len(self.meta_buffer_names),
+            "routed_expert_parameters": sum(
+                ".mlp.experts." in name for name in self.state_keys
+            ),
+            "resident_plan_tensors": len(self.plan.resident_entries),
+            "resident_plan_bytes": self.plan.bytes_for("resident"),
+            "streamed_plan_bytes": self.plan.bytes_for("stream"),
+            "skipped_plan_bytes": self.plan.bytes_for("skip"),
+        }
+
+
+def build_qwen36_meta_text_model(
+    model_dir: str | Path,
+    expert_factory: Callable[[int], Any] | None = None,
+) -> MetaTextModelBuild:
+    import torch
+    from transformers import AutoConfig
+    from transformers.models.qwen3_5_moe.modeling_qwen3_5_moe import (
+        Qwen3_5MoeForCausalLM,
+    )
+
+    plan = build_memory_load_plan(model_dir)
+    config = AutoConfig.from_pretrained(
+        plan.model_dir,
+        local_files_only=True,
+    )
+    text_config = getattr(config, "text_config", None)
+    if text_config is None or text_config.model_type != "qwen3_5_moe_text":
+        raise ValueError("checkpoint does not expose a Qwen3.6 text config")
+    with torch.device("meta"):
+        model = Qwen3_5MoeForCausalLM(text_config)
+    model.eval()
+    model.set_experts_implementation("eager")
+    if expert_factory is None:
+        expert_factory = lambda layer: _MetaExpertPlaceholder(layer)
+    return prepare_qwen36_meta_text_model(model, plan, expert_factory)
+
+
+def prepare_qwen36_meta_text_model(
+    model: Any,
+    plan: MemoryLoadPlan,
+    expert_factory: Callable[[int], Any],
+) -> MetaTextModelBuild:
+    layers = _qwen36_text_layers(model)
+    if len(layers) != plan.num_hidden_layers:
+        raise ValueError(
+            f"meta model layer count mismatch: model={len(layers)}, plan={plan.num_hidden_layers}"
+        )
+    for layer_index, decoder_layer in enumerate(layers):
+        decoder_layer.mlp.experts = expert_factory(layer_index)
+
+    state_keys = tuple(sorted(model.state_dict().keys()))
+    resident_targets = tuple(
+        sorted(entry.target_name for entry in plan.resident_entries if entry.target_name)
+    )
+    missing = sorted(set(state_keys) - set(resident_targets))
+    unexpected = sorted(set(resident_targets) - set(state_keys))
+    if missing or unexpected:
+        raise ValueError(
+            "meta model state does not match resident load plan: "
+            f"missing_sources={missing[:8]}, unexpected_targets={unexpected[:8]}"
+        )
+    expert_parameters = [name for name in state_keys if ".mlp.experts." in name]
+    if expert_parameters:
+        raise ValueError(
+            f"meta model still contains routed expert parameters: {expert_parameters[:5]}"
+        )
+    non_meta_parameters = [
+        name for name, parameter in model.named_parameters() if not parameter.is_meta
+    ]
+    non_meta_buffers = [
+        name for name, buffer in model.named_buffers() if not buffer.is_meta
+    ]
+    if non_meta_parameters or non_meta_buffers:
+        raise ValueError(
+            "meta model allocated real tensors before checkpoint loading: "
+            f"parameters={non_meta_parameters[:5]}, buffers={non_meta_buffers[:5]}"
+        )
+    return MetaTextModelBuild(
+        model=model,
+        plan=plan,
+        state_keys=state_keys,
+        meta_parameter_names=tuple(name for name, _ in model.named_parameters()),
+        meta_buffer_names=tuple(name for name, _ in model.named_buffers()),
+    )
+
+
+def _qwen36_text_layers(model: Any):
+    try:
+        return model.model.layers
+    except AttributeError as exc:
+        raise ValueError("model does not expose Qwen3.6 text decoder layers") from exc
+
+
+class _MetaExpertPlaceholder:
+    """Created lazily to avoid importing torch for header-only planning."""
+
+    def __new__(cls, layer: int):
+        from torch import nn
+
+        class Placeholder(nn.Module):
+            def __init__(self, layer_index: int):
+                super().__init__()
+                self.layer = layer_index
+
+            def forward(self, *_args, **_kwargs):
+                raise RuntimeError("meta expert placeholder cannot execute")
+
+        return Placeholder(layer)
 
 
 def build_memory_load_plan(model_dir: str | Path) -> MemoryLoadPlan:
@@ -188,4 +317,3 @@ def _validate_qwen36_plan(plan: MemoryLoadPlan) -> None:
     }
     if incomplete:
         raise ValueError(f"streamed expert layers have missing parts: {incomplete}")
-
