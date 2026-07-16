@@ -56,6 +56,25 @@ class FakeModel(nn.Module):
 
 
 class TextRuntimeTest(unittest.TestCase):
+    def test_summary_telemetry_does_not_materialize_unique_experts(self):
+        class Selected:
+            shape = (1, 8)
+
+            def numel(self):
+                return 8
+
+            def unique(self):
+                raise AssertionError("summary telemetry must not compute unique experts")
+
+        telemetry = RuntimeTelemetry("summary")
+        telemetry.begin_forward(0, "decode", 3)
+        telemetry.record_layer(0, Selected(), {}, {}, 1.0)
+        result = telemetry.as_dict()
+
+        self.assertEqual(result["summary"]["route_requests"], 8)
+        self.assertIsNone(result["summary"]["unique_experts_sum"])
+        self.assertEqual(result["records"], [])
+
     def test_layer_telemetry_preserves_forward_phase_and_counter_deltas(self):
         telemetry = RuntimeTelemetry("layer")
         telemetry.begin_forward(1, "decode", 12)
@@ -74,6 +93,7 @@ class TextRuntimeTest(unittest.TestCase):
         self.assertEqual(result["records"][0]["provider"]["reader_calls"], 2)
         self.assertEqual(result["records"][0]["provider"]["reader_bytes"], 20)
         self.assertEqual(result["forwards"][0]["token_position"], 12)
+
     def test_sparseflow_expert_module_uses_provider_for_shared_dispatch(self):
         class Provider:
             backend_id = "test"
@@ -412,3 +432,6 @@ class TextRuntimeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# [Main Dev]

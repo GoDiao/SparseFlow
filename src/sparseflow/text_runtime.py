@@ -32,6 +32,11 @@ DISPATCH_ID = "qwen36-topk-index-add-v1"
 KERNEL_ID = "bf16-linear-silu-linear-eager-v1"
 
 
+def _provider_counters(provider: ExpertProvider) -> dict[str, Any]:
+    counters = getattr(provider, "counters", None)
+    return counters() if counters is not None else provider.snapshot()
+
+
 try:
     from torch import nn as _torch_nn
 except ImportError:  # pragma: no cover - text runtime requires torch at use time
@@ -91,7 +96,7 @@ class SparseFlowQwenExperts(_Module):
     def forward(self, hidden_states, top_k_index, top_k_weights):
         self.route_audit.record(self.layer, top_k_index)
         self.provider.observe_routes(self.layer, top_k_index)
-        before = self.provider.snapshot()
+        before = _provider_counters(self.provider)
         started = time.perf_counter()
         result = run_routed_experts(
             hidden_states,
@@ -105,7 +110,7 @@ class SparseFlowQwenExperts(_Module):
             self.layer,
             top_k_index,
             before,
-            self.provider.snapshot(),
+            _provider_counters(self.provider),
             elapsed_ms,
         )
         return result
@@ -435,7 +440,9 @@ class Qwen36TextRuntime:
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask", self.torch.ones_like(input_ids))
         rss_before_prefill = current_rss_bytes()
-        storage_before_prefill = self.provider.snapshot() if self.provider is not None else None
+        storage_before_prefill = (
+            _provider_counters(self.provider) if self.provider is not None else None
+        )
         route_start = len(self.route_audit.records) if self.route_audit is not None else 0
         self._begin_forward(0, "prefill", int(input_ids.shape[-1]) - 1)
 
@@ -443,7 +450,9 @@ class Qwen36TextRuntime:
         first = self.prefill(inputs)
         next_token = first.logits[:, -1, :].argmax(dim=-1, keepdim=True)
         prefill_seconds = time.perf_counter() - prefill_started
-        storage_after_prefill = self.provider.snapshot() if self.provider is not None else None
+        storage_after_prefill = (
+            _provider_counters(self.provider) if self.provider is not None else None
+        )
         generated = [next_token]
         logit_fingerprints = (
             [_logit_fingerprint(first.logits[:, -1, :], self.torch)]
@@ -475,7 +484,7 @@ class Qwen36TextRuntime:
             output = self.decode(next_token, attention_mask, past)
             decode_durations.append(time.perf_counter() - started)
             if self.provider is not None:
-                decode_storage.append(self.provider.snapshot())
+                decode_storage.append(_provider_counters(self.provider))
             next_token = output.logits[:, -1, :].argmax(dim=-1, keepdim=True)
             generated.append(next_token)
             if logit_fingerprints is not None:
@@ -498,7 +507,9 @@ class Qwen36TextRuntime:
         if self.provider is not None:
             self.provider.finish_generation()
         prefetch_finalize_seconds = time.perf_counter() - finalize_started
-        storage_after_generation = self.provider.snapshot() if self.provider is not None else None
+        storage_after_generation = (
+            _provider_counters(self.provider) if self.provider is not None else None
+        )
         route_records = (
             self.route_audit.records[route_start:] if self.route_audit is not None else None
         )
@@ -1048,3 +1059,6 @@ def _logit_fingerprint(logits, torch) -> dict[str, Any]:
         "shape": list(values.shape),
         "argmax": values.argmax(dim=-1).tolist(),
     }
+
+
+# [Main Dev]

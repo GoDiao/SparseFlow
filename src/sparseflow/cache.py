@@ -86,6 +86,8 @@ class ExpertCache:
         self._layers: dict[int, OrderedDict[int, CachedExpert]] = {}
         self._global_lru: OrderedDict[tuple[int, int], None] = OrderedDict()
         self._cached_bytes = 0
+        self._entries = 0
+        self._eviction_listeners: list[Callable[[CachedExpert], None]] = []
         self._phase = "unknown"
         self._forward = -1
 
@@ -95,7 +97,17 @@ class ExpertCache:
 
     @property
     def entries(self) -> int:
-        return sum(len(layer_cache) for layer_cache in self._layers.values())
+        return self._entries
+
+    def add_eviction_listener(self, listener: Callable[[CachedExpert], None]) -> None:
+        if listener not in self._eviction_listeners:
+            self._eviction_listeners.append(listener)
+
+    def remove_eviction_listener(self, listener: Callable[[CachedExpert], None]) -> None:
+        try:
+            self._eviction_listeners.remove(listener)
+        except ValueError:
+            pass
 
     def begin_forward(self, forward: int, phase: str) -> None:
         self._forward = forward
@@ -159,7 +171,10 @@ class ExpertCache:
             return existing
         # Keep one writable backing buffer per part so tensor views can be
         # created without a second copy at the runtime adapter boundary.
-        normalized = {part: bytearray(data) for part, data in payloads.items()}
+        normalized = {
+            part: data if isinstance(data, bytearray) else bytearray(data)
+            for part, data in payloads.items()
+        }
         if not normalized:
             raise ValueError(f"loader returned no payloads for layer={layer}, expert={expert_id}")
         entry = CachedExpert(layer=layer, expert_id=expert_id, parts=normalized)
@@ -196,7 +211,9 @@ class ExpertCache:
         previous = layer_cache.pop(entry.expert_id, None)
         if previous is not None:
             self._cached_bytes -= previous.nbytes
+            self._entries -= 1
             self._global_lru.pop((entry.layer, entry.expert_id), None)
+            self._notify_evicted(previous)
 
         if self.capacity_per_layer == 0:
             return
@@ -211,16 +228,25 @@ class ExpertCache:
             return
 
         while self.capacity_per_layer is not None and len(layer_cache) >= self.capacity_per_layer:
-            candidates = tuple((entry.layer, expert) for expert in layer_cache)
-            self._evict_key(self.policy.choose_victim(candidates))
+            if type(self.policy) is LRUPolicy:
+                victim = (entry.layer, next(iter(layer_cache)))
+            else:
+                candidates = tuple((entry.layer, expert) for expert in layer_cache)
+                victim = self.policy.choose_victim(candidates)
+            self._evict_key(victim)
 
         layer_cache[entry.expert_id] = entry
         self._cached_bytes += entry.nbytes
+        self._entries += 1
         self._global_lru[(entry.layer, entry.expert_id)] = None
         self.policy.on_insert((entry.layer, entry.expert_id), entry.nbytes)
 
         while self.max_bytes is not None and self._cached_bytes > self.max_bytes:
-            self._evict_key(self.policy.choose_victim(tuple(self._global_lru)))
+            if type(self.policy) is LRUPolicy:
+                victim = next(iter(self._global_lru))
+            else:
+                victim = self.policy.choose_victim(tuple(self._global_lru))
+            self._evict_key(victim)
 
     def _evict_key(self, key: tuple[int, int]) -> None:
         old_layer, old_expert = key
@@ -228,24 +254,40 @@ class ExpertCache:
         old_entry = old_cache.pop(old_expert)
         self._global_lru.pop(key, None)
         self._cached_bytes -= old_entry.nbytes
+        self._entries -= 1
         self.stats.evictions += 1
         self.policy.on_evict(key, old_entry.nbytes)
+        self._notify_evicted(old_entry)
+
+    def _notify_evicted(self, entry: CachedExpert) -> None:
+        for listener in tuple(self._eviction_listeners):
+            listener(entry)
 
     def clear(self) -> None:
         for layer_cache in self._layers.values():
             for entry in layer_cache.values():
                 self.policy.on_evict((entry.layer, entry.expert_id), entry.nbytes)
+                self._notify_evicted(entry)
         self._layers.clear()
         self._global_lru.clear()
         self._cached_bytes = 0
+        self._entries = 0
 
     def cached_keys(self) -> tuple[tuple[int, int], ...]:
         """Return cached keys without changing LRU order or statistics."""
 
         return tuple(self._global_lru.keys())
 
-    def stats_dict(self) -> dict[str, object]:
-        return {
-            **self.stats.as_dict(self.cached_bytes, self.entries),
-            "policy": self.policy.snapshot(),
-        }
+    def counters(self) -> dict[str, int | float]:
+        """Return fixed-cost counters without materializing policy diagnostics."""
+
+        return self.stats.as_dict(self.cached_bytes, self.entries)
+
+    def stats_dict(self, include_policy: bool = True) -> dict[str, object]:
+        result: dict[str, object] = dict(self.counters())
+        if include_policy:
+            result["policy"] = self.policy.snapshot()
+        return result
+
+
+# [Main Dev]

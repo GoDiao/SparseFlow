@@ -135,6 +135,7 @@ class CachedExpertProvider:
         self._phase = "unknown"
         self._prediction_history: list[dict[int, tuple[int, ...]]] = []
         self._decoded: dict[tuple[int, int], tuple[CachedExpert, dict[str, Any]]] = {}
+        self.cache.add_eviction_listener(self._on_cache_evict)
         self._prefetch_lock = RLock()
         self._executor: ThreadPoolExecutor | None = None
         self._inflight: dict[tuple[int, int], Future] = {}
@@ -186,6 +187,9 @@ class CachedExpertProvider:
         self.close()
 
     def get(self, layer: int, expert_id: int) -> dict[str, Any]:
+        if self.prefetch_workers == 0:
+            return self._get_without_prefetch(layer, expert_id)
+
         key = (layer, expert_id)
         location = self.locator.locate(layer, expert_id)
         with self._prefetch_lock:
@@ -224,7 +228,7 @@ class CachedExpertProvider:
             calls_before = self.reader.read_calls
             bytes_before = self.reader.read_bytes
             started = time.perf_counter()
-            payloads = read_expert_bytes(location, self.reader)
+            payloads = self.reader.read_expert_into(location)
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             with self._prefetch_lock:
                 entry = self.cache.put_loaded(layer, expert_id, payloads)
@@ -233,6 +237,29 @@ class CachedExpertProvider:
                 self._demand_metrics["read_ms_total"] += elapsed_ms
                 self._reconcile_prefetched_ready()
 
+        return self._decode_entry(key, location, entry)
+
+    def _get_without_prefetch(self, layer: int, expert_id: int) -> dict[str, Any]:
+        key = (layer, expert_id)
+        location = self.locator.locate(layer, expert_id)
+        entry = self.cache.lookup(layer, expert_id, expected_nbytes=location.nbytes)
+        self._demand_metrics["requests"] += 1
+        if entry is not None:
+            self._demand_metrics["reuse_hits"] += 1
+        else:
+            self._demand_metrics["misses"] += 1
+            calls_before = self.reader.read_calls
+            bytes_before = self.reader.read_bytes
+            started = time.perf_counter()
+            payloads = self.reader.read_expert_into(location)
+            elapsed_ms = (time.perf_counter() - started) * 1000.0
+            entry = self.cache.put_loaded(layer, expert_id, payloads)
+            self._demand_metrics["read_calls"] += self.reader.read_calls - calls_before
+            self._demand_metrics["read_bytes"] += self.reader.read_bytes - bytes_before
+            self._demand_metrics["read_ms_total"] += elapsed_ms
+        return self._decode_entry(key, location, entry)
+
+    def _decode_entry(self, key, location, entry: CachedExpert) -> dict[str, Any]:
         existing = self._decoded.get(key)
         if existing is not None and existing[0] is entry:
             return existing[1]
@@ -246,20 +273,20 @@ class CachedExpertProvider:
             )
             for part in ("gate_up_proj", "down_proj")
         }
+        layer, expert_id = key
         if self.cache.peek(layer, expert_id) is entry:
             self._decoded[key] = (entry, weights)
         else:
             # A zero/smaller-than-entry budget deliberately does not retain
             # decoded state beyond the current kernel call.
             self._decoded.pop(key, None)
-        self._prune_decoded()
         return weights
 
-    def _prune_decoded(self) -> None:
-        live = set(self.cache.cached_keys())
-        for key in tuple(self._decoded):
-            if key not in live:
-                self._decoded.pop(key, None)
+    def _on_cache_evict(self, entry: CachedExpert) -> None:
+        key = (entry.layer, entry.expert_id)
+        decoded = self._decoded.get(key)
+        if decoded is not None and decoded[0] is entry:
+            self._decoded.pop(key, None)
 
     @property
     def decoded_entries(self) -> int:
@@ -502,8 +529,11 @@ class CachedExpertProvider:
                 self._prefetch_metrics["wasted_ready_bytes"] += self._prefetched_ready.pop(key)
 
     def snapshot(self) -> dict[str, Any]:
+        return self.counters()
+
+    def counters(self) -> dict[str, Any]:
         with self._prefetch_lock:
-            cache = self.cache.stats_dict()
+            cache = self.cache.counters()
             return {
                 "backend_id": self.backend_id,
                 "reader_calls": self.reader.read_calls,
@@ -540,8 +570,9 @@ class CachedExpertProvider:
 
     def storage_report(self) -> dict[str, Any]:
         return {
-            **self.snapshot(),
+            **self.counters(),
             "policy": "routed experts loaded on demand through ExpertCache",
+            "cache_policy": self.cache.policy.snapshot(),
             "preload_read_calls": 0,
             "preload_read_bytes": 0,
             "prefetch_policy": self.prefetch_policy,
@@ -551,6 +582,7 @@ class CachedExpertProvider:
 
     def close(self) -> None:
         self.finish_generation()
+        self.cache.remove_eviction_listener(self._on_cache_evict)
         executor = self._executor
         if executor is not None:
             executor.shutdown(wait=True)
@@ -1218,3 +1250,6 @@ def _decode_bf16(location, payloads: dict[str, bytes], torch):
         writable = bytearray(data)
         weights[part] = torch.frombuffer(writable, dtype=torch.bfloat16).clone().reshape(item.expert_shape)
     return weights
+
+
+# [Main Dev]

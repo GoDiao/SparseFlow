@@ -360,9 +360,9 @@ def main(argv: list[str] | None = None) -> int:
         for run_index in range(args.runs):
             for row in rows:
                 if runtime.telemetry is not None:
-                    runtime.telemetry.records.clear()
+                    runtime.telemetry.reset()
                 before_process = process_snapshot()
-                before_provider = runtime.provider.snapshot() if runtime.provider else None
+                before_provider = runtime.provider.counters() if runtime.provider else None
                 started = time.perf_counter()
                 generated = runtime.greedy_generate(
                     row["text"],
@@ -370,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
                     record_logit_fingerprints=True,
                 )
                 wall_seconds = time.perf_counter() - started
-                after_provider = runtime.provider.snapshot() if runtime.provider else None
+                after_provider = runtime.provider.counters() if runtime.provider else None
                 after_process = process_snapshot()
                 result["runs"].append(
                     result_record(

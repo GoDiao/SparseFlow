@@ -172,6 +172,44 @@ class ShardReader:
             )
         return data
 
+    def readinto(self, path: Path, offset: int, buffer: bytearray | memoryview) -> int:
+        """Read a positional range directly into caller-owned writable memory."""
+
+        if offset < 0:
+            raise ValueError("offset must be non-negative")
+        view = memoryview(buffer).cast("B")
+        if view.readonly:
+            raise ValueError("readinto requires a writable buffer")
+        fd = self._fd_for(path)
+        if hasattr(os, "preadv"):
+            read_bytes = os.preadv(fd, [view], offset)
+        else:
+            data = os.pread(fd, len(view), offset) if hasattr(os, "pread") else None
+            if data is None:  # Windows fallback; protect the shared file position.
+                with self._lock:
+                    os.lseek(fd, offset, os.SEEK_SET)
+                    data = os.read(fd, len(view))
+            read_bytes = len(data)
+            view[:read_bytes] = data
+        with self._lock:
+            self.read_calls += 1
+            self.read_bytes += read_bytes
+        if read_bytes != len(view):
+            raise OSError(
+                f"short expert read from {path}: expected {len(view)} bytes, got {read_bytes}"
+            )
+        return read_bytes
+
+    def read_expert_into(self, location: ExpertLocation) -> dict[str, bytearray]:
+        """Read one expert directly into independently owned part buffers."""
+
+        result: dict[str, bytearray] = {}
+        for item in location:
+            payload = bytearray(item.nbytes)
+            self.readinto(item.shard, item.file_offset, payload)
+            result[item.part] = payload
+        return result
+
     def read_slices(self, location: ExpertLocation) -> dict[str, bytes]:
         """Read one expert through the general batch range implementation."""
 
@@ -274,3 +312,6 @@ def load_expert_raw(
         "sha256": combined.hexdigest(),
         "parts": parts,
     }
+
+
+# [Main Dev]

@@ -8,9 +8,32 @@ from benchmarks.prepare_generic_offload import expected_dat_bytes
 from benchmarks.run_sparseflow import validate_cache_state
 from benchmarks.run_stage7_4_matrix import core_matrix
 from benchmarks.summarize_stage7_4 import aggregate, validate_results
+from benchmarks.observer_stage7_5 import rotated_levels, summarize as summarize_observer
 
 
 class Stage74CommonTest(unittest.TestCase):
+    def test_stage75_observer_rotation_and_summary(self):
+        self.assertEqual(rotated_levels(1), ("summary", "layer", "none"))
+        records = []
+        for level, speed, wall in (
+            ("none", 1.0, 2.0),
+            ("summary", 0.99, 2.01),
+            ("layer", 0.9, 2.2),
+        ):
+            records.append(
+                {
+                    "telemetry_level": level,
+                    "prefill_seconds": 1.0,
+                    "decode_tokens_per_second": speed,
+                    "wall_seconds": wall,
+                    "observer_seconds": 0.0,
+                }
+            )
+        result = summarize_observer(records)
+        self.assertAlmostEqual(
+            result["summary"]["decode_throughput_delta_ratio_vs_none"], -0.01
+        )
+
     def test_byte_parser_and_percentile(self):
         self.assertEqual(parse_bytes("4GiB"), 4 * 1024**3)
         self.assertEqual(parse_bytes("512 MiB"), 512 * 1024**2)

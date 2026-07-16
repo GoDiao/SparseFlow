@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
+import time
 from typing import Any
 
 
@@ -32,25 +32,35 @@ _COUNTER_KEYS = (
 
 
 def counter_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, int | float]:
-    result: dict[str, int | float] = {}
-    for key in _COUNTER_KEYS:
-        left = before.get(key, 0)
-        right = after.get(key, 0)
-        result[key] = right - left
-    return result
+    return {
+        key: after.get(key, 0) - before.get(key, 0)
+        for key in _COUNTER_KEYS
+    }
+
+
+def _zero_provider() -> dict[str, int | float]:
+    return {key: 0 for key in _COUNTER_KEYS}
 
 
 @dataclass
 class RuntimeTelemetry:
+    """Runtime counters with an O(1) summary path and opt-in layer records."""
+
     level: str = "summary"
     records: list[dict[str, Any]] = field(default_factory=list)
-    _forward: int = -1
-    _phase: str = "unknown"
-    _token_position: int | None = None
+    _forwards: list[dict[str, Any]] = field(default_factory=list)
+    _current: dict[str, Any] | None = None
+    _observer_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         if self.level not in {"none", "summary", "layer"}:
             raise ValueError(f"unknown telemetry level: {self.level}")
+
+    def reset(self) -> None:
+        self.records.clear()
+        self._forwards.clear()
+        self._current = None
+        self._observer_seconds = 0.0
 
     def begin_forward(
         self,
@@ -58,9 +68,21 @@ class RuntimeTelemetry:
         phase: str,
         token_position: int | None,
     ) -> None:
-        self._forward = forward
-        self._phase = phase
-        self._token_position = token_position
+        if self.level == "none":
+            return
+        self._flush_current()
+        self._current = {
+            "forward": forward,
+            "phase": phase,
+            "token_position": token_position,
+            "layers": 0,
+            "route_requests": 0,
+            "unique_experts_sum": 0 if self.level == "layer" else None,
+            "layer_total_ms": 0.0,
+            "provider": _zero_provider(),
+            "cached_bytes_after": 0,
+            "cache_entries_after": 0,
+        }
 
     def record_layer(
         self,
@@ -72,68 +94,85 @@ class RuntimeTelemetry:
     ) -> None:
         if self.level == "none":
             return
-        unique = selected_experts.detach().to(device="cpu").unique()
-        self.records.append(
-            {
-                "forward": self._forward,
-                "phase": self._phase,
-                "token_position": self._token_position,
-                "layer": layer,
-                "rows": int(selected_experts.shape[0]),
-                "route_requests": int(selected_experts.numel()),
-                "unique_experts": int(unique.numel()),
-                "layer_total_ms": elapsed_ms,
-                "provider": counter_delta(before, after),
-                "cached_bytes_after": int(after.get("cached_bytes", 0)),
-                "cache_entries_after": int(after.get("cached_experts", 0)),
-            }
-        )
+        observer_started = time.perf_counter()
+        if self._current is None:
+            self.begin_forward(-1, "unknown", None)
+        assert self._current is not None
+        provider = counter_delta(before, after)
+        route_requests = int(selected_experts.numel())
+        current = self._current
+        current["layers"] += 1
+        current["route_requests"] += route_requests
+        current["layer_total_ms"] += elapsed_ms
+        for key, value in provider.items():
+            current["provider"][key] += value
+        current["cached_bytes_after"] = int(after.get("cached_bytes", 0))
+        current["cache_entries_after"] = int(after.get("cached_experts", 0))
+
+        if self.level == "layer":
+            unique_experts = int(selected_experts.unique().numel())
+            current["unique_experts_sum"] += unique_experts
+            self.records.append(
+                {
+                    "forward": current["forward"],
+                    "phase": current["phase"],
+                    "token_position": current["token_position"],
+                    "layer": layer,
+                    "rows": int(selected_experts.shape[0]),
+                    "route_requests": route_requests,
+                    "unique_experts": unique_experts,
+                    "layer_total_ms": elapsed_ms,
+                    "provider": provider,
+                    "cached_bytes_after": current["cached_bytes_after"],
+                    "cache_entries_after": current["cache_entries_after"],
+                }
+            )
+        self._observer_seconds += time.perf_counter() - observer_started
 
     def as_dict(self) -> dict[str, Any]:
         if self.level == "none":
-            return {"level": "none", "summary": {}, "forwards": [], "records": []}
-        by_forward: dict[tuple[int, str, int | None], list[dict[str, Any]]] = defaultdict(list)
-        for record in self.records:
-            key = (record["forward"], record["phase"], record["token_position"])
-            by_forward[key].append(record)
-        forwards = []
-        for (forward, phase, token_position), records in sorted(by_forward.items()):
-            provider = _sum_provider(records)
-            forwards.append(
-                {
-                    "forward": forward,
-                    "phase": phase,
-                    "token_position": token_position,
-                    "layers": len(records),
-                    "route_requests": sum(item["route_requests"] for item in records),
-                    "unique_experts_sum": sum(item["unique_experts"] for item in records),
-                    "layer_total_ms": sum(item["layer_total_ms"] for item in records),
-                    "provider": provider,
-                    "cached_bytes_after": records[-1]["cached_bytes_after"],
-                    "cache_entries_after": records[-1]["cache_entries_after"],
-                }
-            )
+            return {
+                "level": "none",
+                "observer_seconds": 0.0,
+                "summary": {},
+                "forwards": [],
+                "records": [],
+            }
+        self._flush_current()
         summary = {
-            "forwards": len(forwards),
-            "layers": len(self.records),
-            "prefill_forwards": sum(item["phase"] == "prefill" for item in forwards),
-            "decode_forwards": sum(item["phase"] == "decode" for item in forwards),
-            "route_requests": sum(item["route_requests"] for item in self.records),
-            "unique_experts_sum": sum(item["unique_experts"] for item in self.records),
-            "layer_total_ms": sum(item["layer_total_ms"] for item in self.records),
-            "provider": _sum_provider(self.records),
+            "forwards": len(self._forwards),
+            "layers": sum(item["layers"] for item in self._forwards),
+            "prefill_forwards": sum(item["phase"] == "prefill" for item in self._forwards),
+            "decode_forwards": sum(item["phase"] == "decode" for item in self._forwards),
+            "route_requests": sum(item["route_requests"] for item in self._forwards),
+            "unique_experts_sum": (
+                sum(item["unique_experts_sum"] for item in self._forwards)
+                if self.level == "layer"
+                else None
+            ),
+            "layer_total_ms": sum(item["layer_total_ms"] for item in self._forwards),
+            "provider": _sum_provider(self._forwards),
         }
         return {
             "level": self.level,
+            "observer_seconds": self._observer_seconds,
             "summary": summary,
-            "forwards": forwards,
-            "records": self.records if self.level == "layer" else [],
+            "forwards": list(self._forwards),
+            "records": list(self.records) if self.level == "layer" else [],
         }
 
+    def _flush_current(self) -> None:
+        if self._current is not None:
+            self._forwards.append(self._current)
+            self._current = None
 
-def _sum_provider(records: list[dict[str, Any]]) -> dict[str, int | float]:
-    result: dict[str, int | float] = {key: 0 for key in _COUNTER_KEYS}
-    for record in records:
-        for key, value in record["provider"].items():
+
+def _sum_provider(forwards: list[dict[str, Any]]) -> dict[str, int | float]:
+    result = _zero_provider()
+    for item in forwards:
+        for key, value in item["provider"].items():
             result[key] += value
     return result
+
+
+# [Main Dev]

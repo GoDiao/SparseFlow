@@ -32,6 +32,8 @@ class ExpertProvider(Protocol):
 
     def snapshot(self) -> dict[str, Any]: ...
 
+    def counters(self) -> dict[str, Any]: ...
+
     def storage_report(self) -> dict[str, Any]: ...
 
     def prefetch_stats(self) -> dict[str, Any] | None: ...
@@ -160,6 +162,9 @@ class ResidentExpertProvider:
             raise RuntimeError("resident expert provider is closed")
 
     def snapshot(self) -> dict[str, Any]:
+        return self.counters()
+
+    def counters(self) -> dict[str, Any]:
         return {
             "backend_id": self.backend_id,
             "reader_calls": self.reader.read_calls,
@@ -172,7 +177,7 @@ class ResidentExpertProvider:
         }
 
     def storage_report(self) -> dict[str, Any]:
-        snapshot = self.snapshot()
+        snapshot = self.counters()
         return {
             **snapshot,
             "policy": "all routed experts resident in fused layer buffers",
@@ -200,3 +205,6 @@ class ResidentExpertProvider:
 
     def __exit__(self, _exc_type, _exc, _traceback) -> None:
         self.close()
+
+
+# [Main Dev]

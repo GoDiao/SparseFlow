@@ -3,6 +3,7 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from sparseflow.benchmark import generate_trace, load_trace, parse_byte_budgets, run_expert_benchmark
 from sparseflow.cache import ExpertCache
@@ -31,6 +32,28 @@ def write_shard(path: Path, tensors):
 
 
 class ExpertCacheTest(unittest.TestCase):
+    def test_lightweight_counters_skip_policy_diagnostics(self):
+        policy = make_cache_policy("heat", max_hot_entries=1)
+        cache = ExpertCache(max_bytes=16, policy=policy)
+        cache.put_sized(0, 0, 4)
+
+        with patch.object(
+            policy,
+            "snapshot",
+            side_effect=AssertionError("policy diagnostics entered hot path"),
+        ):
+            self.assertEqual(cache.counters()["cache_entries"], 1)
+
+    def test_eviction_listener_receives_exact_entry(self):
+        evicted = []
+        cache = ExpertCache(max_bytes=2)
+        cache.add_eviction_listener(evicted.append)
+        first = cache.put_sized(0, 0, 2)
+        cache.put_sized(0, 1, 2)
+
+        self.assertEqual(evicted, [first])
+        self.assertEqual(cache.entries, 1)
+
     def test_no_cache_policy_rejects_admission_under_nonzero_budget(self):
         cache = ExpertCache(max_bytes=16, policy=make_cache_policy("none"))
         cache.begin_forward(0, "decode")
@@ -99,6 +122,17 @@ class ExpertCacheTest(unittest.TestCase):
                 self.assertEqual(reader.read_calls, 2)
                 self.assertEqual(reader.read_bytes, 5)
                 self.assertEqual(len(reader._fds), 1)
+
+    def test_shard_reader_reads_into_owned_buffer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "shard.bin"
+            path.write_bytes(b"abcdefgh")
+            target = bytearray(3)
+            with ShardReader() as reader:
+                self.assertEqual(reader.readinto(path, 2, target), 3)
+                self.assertEqual(target, b"cde")
+                self.assertEqual(reader.read_calls, 1)
+                self.assertEqual(reader.read_bytes, 3)
 
     def test_batch_read_coalesces_multiple_expert_slices(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -300,3 +334,6 @@ class ExpertBenchTest(unittest.TestCase):
         self.assertGreater(predictive["prefetch"]["submitted"], 0)
         self.assertGreater(predictive["prefetch"]["hits"], 0)
         self.assertTrue(all(predictive["invariants"].values()))
+
+
+# [Main Dev]
