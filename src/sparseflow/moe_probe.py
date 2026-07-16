@@ -1109,25 +1109,34 @@ def run_routed_experts(
 ):
     """Run only routed experts, reusable by a full Transformer MoE module."""
 
+    dispatch_started = time.perf_counter() if timing_callback is not None else None
     expert_ids = tuple(int(value) for value in selected_experts.unique(sorted=True).tolist())
+    if dispatch_started is not None:
+        timing_callback("dispatch", (time.perf_counter() - dispatch_started) * 1000.0)
     if prepare_routed is not None:
         started = time.perf_counter() if timing_callback is not None else None
         prepare_routed(expert_ids)
         if started is not None:
             timing_callback("prepare", (time.perf_counter() - started) * 1000.0)
+    dispatch_started = time.perf_counter() if timing_callback is not None else None
     routed_output = hidden_states.new_zeros(hidden_states.shape)
+    if dispatch_started is not None:
+        timing_callback("dispatch", (time.perf_counter() - dispatch_started) * 1000.0)
     for expert_id in expert_ids:
         # Match Transformers' Qwen3.5-MoE dispatch order exactly.  Its
         # expert mask is laid out as [top_k, token], so torch.where visits
         # top-k positions before token positions.  The mathematically
         # equivalent [token, top_k] order can produce different BF16 GEMM
         # rounding on CPU and the error compounds across decoder layers.
+        dispatch_started = time.perf_counter() if timing_callback is not None else None
         top_positions, token_indices = (
             (selected_experts == expert_id)
             .transpose(0, 1)
             .nonzero(as_tuple=True)
         )
         current_state = hidden_states[token_indices]
+        if dispatch_started is not None:
+            timing_callback("dispatch", (time.perf_counter() - dispatch_started) * 1000.0)
         started = time.perf_counter() if timing_callback is not None else None
         weights = routed_loader(expert_id)
         if started is not None:

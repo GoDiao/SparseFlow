@@ -38,6 +38,7 @@ _COUNTER_KEYS = (
 
 _TIMING_CATEGORIES = (
     "router",
+    "dispatch",
     "prepare",
     "provider_get",
     "expert_kernel",

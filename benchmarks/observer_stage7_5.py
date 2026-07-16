@@ -155,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
                     categorized = sum(
                         timings.get(key, 0.0)
                         for key in (
+                            "dispatch",
                             "prepare",
                             "provider_get",
                             "expert_kernel",
@@ -215,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
             <= set(item["timing_breakdown"]["provider_ms"])
             and {
                 "router",
+                "dispatch",
                 "prepare",
                 "provider_get",
                 "expert_kernel",
