@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_quality_manifest_v1",
+  "agent": "Main Dev",
+  "created_utc": "2026-07-16T16:18:22.696213+00:00",
+  "seed": 1234,
+  "sampling": "independent random.Random(f'{seed}:{task}').sample without replacement",
+  "levels": {
+    "smoke": 1,
+    "pilot": 3,
+    "development": 5,
+    "formal": 20
+  },
+  "sources": {
+    "hellaswag": {
+      "dataset": "Rowan/hellaswag",
+      "config": "default",
+      "split": "validation",
+      "revision": "218ec52e09a7e7462a5400043bb9a69a41d06b76",
+      "total_rows": 10042,
+      "sampled_rows": [
+        489,
+        4841,
+        5712,
+        5180,
+        768,
+        1336,
+        4864,
+        4983,
+        945,
+        565,
+        9871,
+        8052,
+        9101,
+        7204,
+        4164,
+        9756,
+        5056,
+        304,
+        2043,
+        3888
+      ]
+    },
+    "arc_challenge": {
+      "dataset": "allenai/ai2_arc",
+      "config": "ARC-Challenge",
+      "split": "validation",
+      "revision": "210d026faf9955653af8916fad021475a3f00453",
+      "total_rows": 299,
+      "sampled_rows": [
+        96,
+        150,
+        148,
+        247,
+        281,
+        137,
+        67,
+        188,
+        77,
+        81,
+        187,
+        53,
+        284,
+        259,
+        175,
+        249,
+        29,
+        291,
+        144,
+        205
+      ]
+    },
+    "mmlu": {
+      "dataset": "cais/mmlu",
+      "config": "all",
+      "split": "test",
+      "revision": "c30699e8356da336a370243923dbaf21066bb9fe",
+      "total_rows": 14042,
+      "sampled_rows": [
+        9946,
+        6893,
+        2641,
+        5162,
+        1662,
+        11468,
+        5367,
+        2713,
+        3996,
+        47,
+        5586,
+        9791,
+        10663,
+        8139,
+        915,
+        3309,
+        9799,
+        6778,
+        2141,
+        8675
+      ]
+    }
+  },
+  "files": {
+    "smoke": {
+      "path": "/root/workspace/SparceFlow/benchmarks/manifests/quality_smoke_v1.jsonl",
+      "rows": 3,
+      "sha256": "906a574dd170ffba88497ae2a3958dd6d50ab1f2a317e167c674b73b2c1989c3"
+    },
+    "pilot": {
+      "path": "/root/workspace/SparceFlow/benchmarks/manifests/quality_pilot_v1.jsonl",
+      "rows": 9,
+      "sha256": "e62f3670691607de40cb5a4aa230be7fa78f536956fcbec45c6e70d8162336c9"
+    },
+    "development": {
+      "path": "/root/workspace/SparceFlow/benchmarks/manifests/quality_development_v1.jsonl",
+      "rows": 15,
+      "sha256": "de7fbe2492733611711f4dc51d585c84c89a92560426da69ecdf509477faa80c"
+    },
+    "formal": {
+      "path": "/root/workspace/SparceFlow/benchmarks/manifests/quality_formal_v1.jsonl",
+      "rows": 60,
+      "sha256": "2beca7b55cf24d801ee39e652855b51320c16d4153f62d76bba7f747d5aab400"
+    }
+  }
+}
