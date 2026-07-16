@@ -24,12 +24,18 @@ def dequantize_expert(location, payloads: Mapping[str, bytes | bytearray | memor
 
 
 class Int8ResidentExpertProvider:
-    backend_id = "sparseflow-int8-reference-resident"
 
-    def __init__(self, container_dir: str | Path, torch):
+    def __init__(self, container_dir: str | Path, torch, native: bool = False):
         self.index = Int8ExpertIndex.from_dir(container_dir)
         self.torch = torch
+        self.native = native
+        self.backend_id = (
+            "sparseflow-int8-native-resident"
+            if native
+            else "sparseflow-int8-reference-resident"
+        )
         self._backings: dict[Path, bytearray] = {}
+        self._native_views: dict[tuple[int, int], dict[str, Any]] = {}
         self._requests = 0
         self._closed = False
         started = time.perf_counter()
@@ -58,6 +64,15 @@ class Int8ResidentExpertProvider:
                 part.scale_offset : part.scale_offset + part.scale_nbytes
             ]
         self._requests += 1
+        if self.native:
+            from .native_int8 import prepare_native_weights
+
+            key = (layer, expert_id)
+            weights = self._native_views.get(key)
+            if weights is None:
+                weights = prepare_native_weights(location, payloads, self.torch)
+                self._native_views[key] = weights
+            return {"gate_up_proj": weights, "down_proj": None}
         return dequantize_expert(location, payloads, self.torch)
 
     def prepare(self, layer: int, expert_ids: tuple[int, ...]) -> None:
@@ -123,6 +138,7 @@ class Int8ResidentExpertProvider:
             "preload_read_bytes": self._resident_bytes,
             "bytes_after_preload": 0,
             "format_id": self.index.manifest["format_id"],
+            "native_views": len(self._native_views),
         }
 
     def prefetch_stats(self) -> None:
@@ -130,12 +146,12 @@ class Int8ResidentExpertProvider:
 
     def close(self) -> None:
         self._backings.clear()
+        self._native_views.clear()
         self._resident_bytes = 0
         self._closed = True
 
 
 class Int8StreamingExpertProvider:
-    backend_id = "sparseflow-int8-reference-streaming"
 
     def __init__(
         self,
@@ -143,11 +159,18 @@ class Int8StreamingExpertProvider:
         cache: ExpertCache,
         reader: ShardReader,
         torch,
+        native: bool = False,
     ):
         self.index = Int8ExpertIndex.from_dir(container_dir)
         self.cache = cache
         self.reader = reader
         self.torch = torch
+        self.native = native
+        self.backend_id = (
+            "sparseflow-int8-native-streaming"
+            if native
+            else "sparseflow-int8-reference-streaming"
+        )
         self._closed = False
         self._forward = -1
         self._phase = "unknown"
@@ -156,6 +179,9 @@ class Int8StreamingExpertProvider:
         self._demand_misses = 0
         self._read_ms_total = 0.0
         self._dequant_ms_total = 0.0
+        self._native_views: dict[tuple[int, int], tuple[Any, dict[str, Any]]] = {}
+        if native:
+            self.cache.add_eviction_listener(self._on_cache_evict)
 
     def get(self, layer: int, expert_id: int):
         if self._closed:
@@ -172,9 +198,28 @@ class Int8StreamingExpertProvider:
         else:
             self._demand_reuse_hits += 1
         started = time.perf_counter()
-        weights = dequantize_expert(location, entry.parts, self.torch)
+        if self.native:
+            from .native_int8 import prepare_native_weights
+
+            key = (layer, expert_id)
+            existing = self._native_views.get(key)
+            if existing is not None and existing[0] is entry:
+                weights = existing[1]
+            else:
+                weights = prepare_native_weights(location, entry.parts, self.torch)
+                if self.cache.peek(layer, expert_id) is entry:
+                    self._native_views[key] = (entry, weights)
+            result = {"gate_up_proj": weights, "down_proj": None}
+        else:
+            result = dequantize_expert(location, entry.parts, self.torch)
         self._dequant_ms_total += (time.perf_counter() - started) * 1000.0
-        return weights
+        return result
+
+    def _on_cache_evict(self, entry) -> None:
+        key = (entry.layer, entry.expert_id)
+        existing = self._native_views.get(key)
+        if existing is not None and existing[0] is entry:
+            self._native_views.pop(key, None)
 
     def _read_location(self, location: Int8ExpertLocation) -> dict[str, bytearray]:
         payloads = {}
@@ -226,6 +271,7 @@ class Int8StreamingExpertProvider:
             "miss_bytes": cache["miss_bytes"],
             "admission_rejections": cache["admission_rejections"],
             "decoded_entries": 0,
+            "native_views": len(self._native_views),
             "transient_prefetch_entries": 0,
             "demand_read_calls": self.reader.read_calls,
             "demand_read_bytes": self.reader.read_bytes,
@@ -263,6 +309,9 @@ class Int8StreamingExpertProvider:
         }
 
     def close(self) -> None:
+        if self.native:
+            self.cache.remove_eviction_listener(self._on_cache_evict)
+        self._native_views.clear()
         self._closed = True
 
 

@@ -33,6 +33,7 @@ EXPERT_MODULE_ID = "SparseFlowQwenExperts-v1"
 DISPATCH_ID = "qwen36-topk-index-add-v1"
 KERNEL_ID = "bf16-linear-silu-linear-eager-v1"
 INT8_REFERENCE_KERNEL_ID = "int8-per-channel-dequant-bf16-linear-silu-linear-v1"
+INT8_NATIVE_KERNEL_ID = "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
 
 
 def _provider_counters(provider: ExpertProvider) -> dict[str, Any]:
@@ -178,9 +179,11 @@ class Qwen36TextRuntime:
         self.experts_implementation = experts_implementation
         self.load_mode = load_mode
         self.expert_storage = expert_storage
-        self.kernel_id = (
-            INT8_REFERENCE_KERNEL_ID if expert_storage == "int8-reference" else KERNEL_ID
-        )
+        self.kernel_id = {
+            "bf16": KERNEL_ID,
+            "int8-reference": INT8_REFERENCE_KERNEL_ID,
+            "int8-native": INT8_NATIVE_KERNEL_ID,
+        }[expert_storage]
         self.loader_report = loader_report
         self._router_hook_handles = self._attach_router_timing_hooks()
 
@@ -224,9 +227,9 @@ class Qwen36TextRuntime:
             raise ValueError("SparseFlow streaming currently implements eager expert arithmetic")
         if load_mode == "memory-native" and mode == "resident" and prefetch_workers:
             raise ValueError("resident expert backend does not support prefetch workers")
-        if expert_storage not in {"bf16", "int8-reference"}:
-            raise ValueError("expert_storage must be bf16 or int8-reference")
-        if expert_storage == "int8-reference":
+        if expert_storage not in {"bf16", "int8-reference", "int8-native"}:
+            raise ValueError("expert_storage must be bf16, int8-reference, or int8-native")
+        if expert_storage in {"int8-reference", "int8-native"}:
             if load_mode != "memory-native":
                 raise ValueError("INT8 reference experts require memory-native loading")
             if int8_container is None:
@@ -279,9 +282,13 @@ class Qwen36TextRuntime:
                         policy=policy,
                         collect_timings=telemetry_level == "layer",
                     )
-                    if expert_storage == "int8-reference":
+                    if expert_storage in {"int8-reference", "int8-native"}:
                         provider = Int8StreamingExpertProvider(
-                            int8_root, cache, reader, torch
+                            int8_root,
+                            cache,
+                            reader,
+                            torch,
+                            native=expert_storage == "int8-native",
                         )
                     else:
                         provider = StreamingExpertProvider(
@@ -296,8 +303,12 @@ class Qwen36TextRuntime:
                         )
                 else:
                     provider = (
-                        Int8ResidentExpertProvider(int8_root, torch)
-                        if expert_storage == "int8-reference"
+                        Int8ResidentExpertProvider(
+                            int8_root,
+                            torch,
+                            native=expert_storage == "int8-native",
+                        )
+                        if expert_storage in {"int8-reference", "int8-native"}
                         else ResidentExpertProvider(root, reader, torch)
                     )
                 route_audit = RouteAudit()
@@ -1009,6 +1020,7 @@ def compare_int8_reference_paths(
     cache_bytes: int = 4 * 1024**3,
     cache_policy: str = "lru",
     telemetry_level: str = "summary",
+    expert_storage: str = "int8-reference",
 ) -> dict[str, Any]:
     """Compare INT8 resident/streaming storage with one reference kernel."""
 
@@ -1018,6 +1030,8 @@ def compare_int8_reference_paths(
         raise ValueError("max_new_tokens must be positive")
     if cache_bytes <= 0:
         raise ValueError("INT8 reference check requires a positive cache budget")
+    if expert_storage not in {"int8-reference", "int8-native"}:
+        raise ValueError("INT8 comparison requires reference or native expert storage")
     root = Path(model_dir).expanduser().resolve()
     container = Path(int8_container).expanduser().resolve()
     int8_index = Int8ExpertIndex.from_dir(container)
@@ -1030,7 +1044,7 @@ def compare_int8_reference_paths(
         dtype="bf16",
         experts_implementation="eager",
         load_mode="memory-native",
-        expert_storage="int8-reference",
+        expert_storage=expert_storage,
         int8_container=container,
         telemetry_level=telemetry_level,
     )
@@ -1045,7 +1059,7 @@ def compare_int8_reference_paths(
         cache_bytes=cache_bytes,
         experts_implementation="eager",
         load_mode="memory-native",
-        expert_storage="int8-reference",
+        expert_storage=expert_storage,
         int8_container=container,
         cache_policy=cache_policy,
         prefetch_policy="none",
@@ -1090,6 +1104,44 @@ def compare_int8_reference_paths(
         "streaming_generation_reads_experts": streaming_reads["read_bytes"] > 0,
         "cache_budget_respected": provider["cached_bytes"] <= cache_bytes,
         "demand_accounting_exact": demand_accounted,
+    }
+    return {
+        "schema_version": 1,
+        "kind": (
+            "qwen3_5_stage7_5_int8_native_correctness"
+            if expert_storage == "int8-native"
+            else "qwen3_5_stage7_5_int8_reference_correctness"
+        ),
+        "stage": "7.5.4" if expert_storage == "int8-native" else "7.5.3",
+        "agent": "Main Dev",
+        "model": str(root),
+        "int8_container": str(container),
+        "prompt": prompt,
+        "max_new_tokens": max_new_tokens,
+        "cache_bytes": cache_bytes,
+        "runtime_identity": resident["runtime_identity"],
+        "resident": {
+            **resident,
+            "load_seconds": resident_load_seconds,
+            "generation_expert_io": resident_reads,
+        },
+        "streaming": {
+            **streaming,
+            "load_seconds": streaming_load_seconds,
+            "generation_expert_io": streaming_reads,
+        },
+        "correctness": {
+            **correctness,
+            "route_audit_equal": route_audit_equal,
+            "runtime_identity_equal": identity_equal,
+        },
+        "invariants": invariants,
+        "all_invariants_pass": all(invariants.values()),
+        "boundary": (
+            "INT8 resident and streaming use identical canonical quantized weights, "
+            "per-output FP16 scales, expert kernel, routed dispatch, attention/DeltaNet, "
+            "KV cache, and greedy loop; only storage policy differs."
+        ),
     }
 
 
@@ -1230,40 +1282,11 @@ def compare_bf16_int8_quantization(
             "argmax_equal_steps": sum(item["argmax_equal"] for item in steps),
         },
     }
-    return {
-        "schema_version": 1,
-        "kind": "qwen3_5_stage7_5_int8_reference_correctness",
-        "stage": "7.5.3",
-        "agent": "Main Dev",
-        "model": str(root),
-        "int8_container": str(container),
-        "prompt": prompt,
-        "max_new_tokens": max_new_tokens,
-        "cache_bytes": cache_bytes,
-        "runtime_identity": resident["runtime_identity"],
-        "resident": {
-            **resident,
-            "load_seconds": resident_load_seconds,
-            "generation_expert_io": resident_reads,
-        },
-        "streaming": {
-            **streaming,
-            "load_seconds": streaming_load_seconds,
-            "generation_expert_io": streaming_reads,
-        },
-        "correctness": {
-            **correctness,
-            "route_audit_equal": route_audit_equal,
-            "runtime_identity_equal": identity_equal,
-        },
-        "invariants": invariants,
-        "all_invariants_pass": all(invariants.values()),
-        "boundary": (
-            "INT8 resident and streaming use identical canonical quantized weights, "
-            "per-output FP16 scales, reference dequant-to-BF16, routed dispatch, "
-            "BF16 expert kernel, attention/DeltaNet, KV cache, and greedy loop."
-        ),
-    }
+def compare_int8_native_paths(*args, **kwargs) -> dict[str, Any]:
+    kwargs["expert_storage"] = "int8-native"
+    return compare_int8_reference_paths(*args, **kwargs)
+
+
 def compare_sparseflow_policy_paths(
     model_dir: str | Path,
     prompt: str,

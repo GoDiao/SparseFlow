@@ -13,6 +13,7 @@ from sparseflow.text_runtime import (
     RouteAudit,
     SparseFlowQwenExperts,
     compare_generation_results,
+    compare_int8_native_paths,
     compare_sparseflow_policy_paths,
     compare_sparseflow_runtime_paths,
     compare_text_paths,
@@ -453,6 +454,72 @@ class TextRuntimeTest(unittest.TestCase):
                 )
         self.assertEqual(exit_code, 0)
         self.assertEqual(compare.call_args.args[:2], ("/tmp/model", "/tmp/int8"))
+
+    def test_int8_native_comparison_returns_report_and_pins_native_storage(self):
+        identity = {"kernel_id": "int8-native"}
+
+        def result(resident):
+            before = {"reader_calls": 0, "reader_bytes": 0}
+            storage = {
+                "resident_layers": 1 if resident else 0,
+                "resident_experts": 2 if resident else 0,
+                "resident_bytes": 100 if resident else 0,
+                "cached_bytes": 0 if resident else 12,
+                "demand_requests": 2,
+                "demand_reuse_hits": 1,
+                "demand_prefetch_served": 0,
+                "demand_misses": 1,
+            }
+            after = {
+                **storage,
+                "reader_calls": 0 if resident else 4,
+                "reader_bytes": 0 if resident else 24,
+            }
+            return {
+                "input_ids": [1],
+                "generated_ids": [2],
+                "generated_tokens": 1,
+                "text": "ok",
+                "logit_fingerprints": [{"sha256": "same"}],
+                "route_audit": [{"sha256": "route"}],
+                "runtime_identity": identity,
+                "provider_storage": storage,
+                "storage_phases": {
+                    "before_prefill": before,
+                    "after_generation": after,
+                },
+                "loader": {
+                    "expert_reader_calls_after_init": 0,
+                    "expert_reader_bytes_after_init": 0,
+                },
+            }
+
+        fake_index = types.SimpleNamespace(
+            manifest={"physical_bytes": 100},
+            layers=(0,),
+            num_experts=2,
+        )
+        with patch("sparseflow.text_runtime.Int8ExpertIndex.from_dir", return_value=fake_index):
+            with patch(
+                "sparseflow.text_runtime._run_text_path",
+                side_effect=[(result(True), 1.0), (result(False), 2.0)],
+            ) as run_path:
+                comparison = compare_int8_native_paths(
+                    "/tmp/model",
+                    "/tmp/int8",
+                    prompt="hello",
+                    max_new_tokens=1,
+                    cache_bytes=16,
+                )
+
+        self.assertEqual(comparison["stage"], "7.5.4")
+        self.assertTrue(comparison["all_invariants_pass"])
+        self.assertTrue(
+            all(
+                call.kwargs["expert_storage"] == "int8-native"
+                for call in run_path.call_args_list
+            )
+        )
 
     def test_stage73_policy_check_reuses_resident_reference_and_checks_accounting(self):
         base = {

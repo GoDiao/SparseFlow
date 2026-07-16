@@ -32,6 +32,7 @@ from .text_runtime import (
     Qwen36TextRuntime,
     compare_bf16_int8_quantization,
     compare_int8_reference_paths,
+    compare_int8_native_paths,
     compare_sparseflow_policy_paths,
     compare_sparseflow_runtime_paths,
     compare_text_paths,
@@ -343,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
     int8_check_p.add_argument("--int8-container", required=True)
     int8_check_p.add_argument("--prompt", required=True)
     int8_check_p.add_argument("--max-new-tokens", type=int, default=4)
+    int8_check_p.add_argument("--kernel", choices=("reference", "native"), default="reference")
     int8_check_p.add_argument("--cache-bytes", default="4GiB")
     int8_check_p.add_argument(
         "--cache-policy",
@@ -685,7 +687,12 @@ def main(argv: list[str] | None = None) -> int:
             print(encoded if args.json else _format_runtime_check(result))
             return 0 if result["all_invariants_pass"] else 1
         if args.command == "int8-reference-check":
-            result = compare_int8_reference_paths(
+            compare_int8 = (
+                compare_int8_native_paths
+                if args.kernel == "native"
+                else compare_int8_reference_paths
+            )
+            result = compare_int8(
                 args.model,
                 args.int8_container,
                 prompt=args.prompt,

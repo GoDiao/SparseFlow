@@ -16,6 +16,10 @@ from .locator import ExpertLocator
 def run_expert_kernel(hidden_states, gate_up_proj, down_proj):
     """The shared routed-expert kernel used by both resident and streaming paths."""
 
+    if isinstance(gate_up_proj, dict) and gate_up_proj.get("native_int8"):
+        from .native_int8 import run_native_expert
+
+        return run_native_expert(hidden_states, gate_up_proj, __import__("torch"))
     import torch.nn.functional as functional
 
     gate, up = functional.linear(hidden_states, gate_up_proj).chunk(2, dim=-1)
