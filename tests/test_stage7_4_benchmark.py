@@ -8,12 +8,12 @@ from benchmarks.prepare_generic_offload import expected_dat_bytes
 from benchmarks.run_sparseflow import validate_cache_state
 from benchmarks.run_stage7_4_matrix import core_matrix
 from benchmarks.summarize_stage7_4 import aggregate, validate_results
-from benchmarks.observer_stage7_5 import rotated_levels, summarize as summarize_observer
+from benchmarks.observer_stage7_5 import paired_levels, summarize as summarize_observer
 
 
 class Stage74CommonTest(unittest.TestCase):
     def test_stage75_observer_rotation_and_summary(self):
-        self.assertEqual(rotated_levels(1), ("summary", "layer", "none"))
+        self.assertEqual(paired_levels(1), ("summary", "none"))
         records = []
         for level, speed, wall in (
             ("none", 1.0, 2.0),
@@ -21,6 +21,7 @@ class Stage74CommonTest(unittest.TestCase):
             ("layer", 0.9, 2.2),
         ):
             record = {
+                    "repetition": 0,
                     "telemetry_level": level,
                     "prefill_seconds": 1.0,
                     "decode_tokens_per_second": speed,

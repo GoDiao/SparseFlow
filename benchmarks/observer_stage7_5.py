@@ -13,9 +13,8 @@ from .common import git_snapshot, host_snapshot, model_snapshot, write_json
 LEVELS = ("none", "summary", "layer")
 
 
-def rotated_levels(repetition: int) -> tuple[str, ...]:
-    offset = repetition % len(LEVELS)
-    return LEVELS[offset:] + LEVELS[:offset]
+def paired_levels(repetition: int) -> tuple[str, str]:
+    return ("none", "summary") if repetition % 2 == 0 else ("summary", "none")
 
 
 def summarize(records: list[dict]) -> dict[str, dict]:
@@ -51,6 +50,27 @@ def summarize(records: list[dict]) -> dict[str, dict]:
         item["wall_delta_ratio_vs_none"] = (
             item["median_wall_seconds"] / baseline["median_wall_seconds"] - 1.0
         )
+    pairs = []
+    repetitions = sorted(
+        {
+            item["repetition"]
+            for item in records
+            if item["telemetry_level"] != "layer"
+        }
+    )
+    for repetition in repetitions:
+        pair = {
+            item["telemetry_level"]: item
+            for item in records
+            if item["repetition"] == repetition and item["telemetry_level"] != "layer"
+        }
+        pairs.append(
+            pair["summary"]["decode_tokens_per_second"]
+            / pair["none"]["decode_tokens_per_second"]
+            - 1.0
+        )
+    result["summary"]["paired_decode_delta_ratio_vs_none"] = statistics.median(pairs)
+    result["summary"]["paired_decode_deltas"] = pairs
     return result
 
 
@@ -59,11 +79,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", default="model/Qwen3.6-35B-A3B")
     parser.add_argument("--prompt", default="请简要解释稀疏专家模型为什么适合分层存储。")
     parser.add_argument("--threads", type=int, default=10)
-    parser.add_argument("--runs", type=int, default=3)
-    parser.add_argument("--max-new-tokens", type=int, default=8)
+    parser.add_argument("--runs", type=int, default=5)
+    parser.add_argument("--layer-runs", type=int, default=3)
+    parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
-    if args.threads < 1 or args.runs < 1 or args.max_new_tokens < 2:
+    if args.threads < 1 or args.runs < 1 or args.layer_runs < 1 or args.max_new_tokens < 2:
         parser.error("threads/runs must be positive and max-new-tokens must be >= 2")
 
     import torch
@@ -96,10 +117,11 @@ def main(argv: list[str] | None = None) -> int:
             "load_mode": "memory-native",
             "dtype": "bf16",
             "threads": args.threads,
-            "runs_per_level": args.runs,
+            "primary_pairs": args.runs,
+            "layer_runs": args.layer_runs,
             "max_new_tokens": args.max_new_tokens,
             "levels": list(LEVELS),
-            "order": "rotated Latin order within one loaded runtime",
+            "order": "AB/BA paired none-summary runs, followed by layer diagnostics",
         },
         "records": [],
         "summary": {},
@@ -119,64 +141,68 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         runtime.greedy_generate(args.prompt, max_new_tokens=args.max_new_tokens)
-        for repetition in range(args.runs):
-            for level in rotated_levels(repetition):
-                runtime.telemetry.level = level
-                runtime.telemetry.reset()
-                started = time.perf_counter()
-                generated = runtime.greedy_generate(
-                    args.prompt,
-                    max_new_tokens=args.max_new_tokens,
-                    record_logit_fingerprints=True,
+        schedule = [
+            (repetition, level)
+            for repetition in range(args.runs)
+            for level in paired_levels(repetition)
+        ] + [(repetition, "layer") for repetition in range(args.layer_runs)]
+        for repetition, level in schedule:
+            runtime.telemetry.level = level
+            runtime.telemetry.reset()
+            started = time.perf_counter()
+            generated = runtime.greedy_generate(
+                args.prompt,
+                max_new_tokens=args.max_new_tokens,
+                record_logit_fingerprints=True,
+            )
+            wall_seconds = time.perf_counter() - started
+            decode_tokens = generated["generated_tokens"] - 1
+            telemetry = generated["telemetry"]
+            record = {
+                "repetition": repetition,
+                "telemetry_level": level,
+                "wall_seconds": wall_seconds,
+                "prefill_seconds": generated["prefill_seconds"],
+                "decode_seconds": generated["decode_seconds"],
+                "decode_tokens_per_second": (
+                    decode_tokens / generated["decode_seconds"]
+                    if decode_tokens and generated["decode_seconds"] > 0
+                    else None
+                ),
+                "generated_ids": generated["generated_ids"],
+                "logit_fingerprints": generated["logit_fingerprints"],
+                "observer_seconds": telemetry["observer_seconds"],
+                "telemetry_forwards": len(telemetry["forwards"]),
+                "telemetry_records": len(telemetry["records"]),
+            }
+            if level == "layer":
+                timings = telemetry["summary"]["timings_ms"]
+                layer_total = telemetry["summary"]["layer_total_ms"]
+                categorized = sum(
+                    timings.get(key, 0.0)
+                    for key in (
+                        "dispatch",
+                        "prepare",
+                        "provider_get",
+                        "expert_kernel",
+                        "routing_accumulation",
+                    )
                 )
-                wall_seconds = time.perf_counter() - started
-                decode_tokens = generated["generated_tokens"] - 1
-                telemetry = generated["telemetry"]
-                record = {
-                    "repetition": repetition,
-                    "telemetry_level": level,
-                    "wall_seconds": wall_seconds,
-                    "prefill_seconds": generated["prefill_seconds"],
-                    "decode_seconds": generated["decode_seconds"],
-                    "decode_tokens_per_second": (
-                        decode_tokens / generated["decode_seconds"]
-                        if decode_tokens and generated["decode_seconds"] > 0
-                        else None
-                    ),
-                    "generated_ids": generated["generated_ids"],
-                    "logit_fingerprints": generated["logit_fingerprints"],
-                    "observer_seconds": telemetry["observer_seconds"],
-                    "telemetry_forwards": len(telemetry["forwards"]),
-                    "telemetry_records": len(telemetry["records"]),
+                record["timing_breakdown"] = {
+                    "runtime_ms": timings,
+                    "provider_ms": {
+                        key: value
+                        for key, value in telemetry["summary"]["provider"].items()
+                        if key.startswith("timing_")
+                    },
+                    "layer_total_ms": layer_total,
+                    "categorized_critical_path_ms": categorized,
                 }
-                if level == "layer":
-                    timings = telemetry["summary"]["timings_ms"]
-                    layer_total = telemetry["summary"]["layer_total_ms"]
-                    categorized = sum(
-                        timings.get(key, 0.0)
-                        for key in (
-                            "dispatch",
-                            "prepare",
-                            "provider_get",
-                            "expert_kernel",
-                            "routing_accumulation",
-                        )
-                    )
-                    record["timing_breakdown"] = {
-                        "runtime_ms": timings,
-                        "provider_ms": {
-                            key: value
-                            for key, value in telemetry["summary"]["provider"].items()
-                            if key.startswith("timing_")
-                        },
-                        "layer_total_ms": layer_total,
-                        "categorized_critical_path_ms": categorized,
-                    }
-                    record["critical_path_closure_ratio"] = (
-                        categorized / layer_total if layer_total else 1.0
-                    )
-                result["records"].append(record)
-                write_json(output, result)
+                record["critical_path_closure_ratio"] = (
+                    categorized / layer_total if layer_total else 1.0
+                )
+            result["records"].append(record)
+            write_json(output, result)
     finally:
         runtime.close()
 
@@ -188,9 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         for item in result["records"]
     }
-    summary_delta = abs(
-        result["summary"]["summary"]["decode_throughput_delta_ratio_vs_none"]
-    )
+    summary_delta = abs(result["summary"]["summary"]["paired_decode_delta_ratio_vs_none"])
     result["acceptance"] = {
         "all_logits_and_ids_exact": len(identities) == 1,
         "summary_decode_delta_within_3_percent": summary_delta <= 0.03,
