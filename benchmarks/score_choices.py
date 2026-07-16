@@ -13,6 +13,8 @@ from .common import (
     git_snapshot,
     host_snapshot,
     model_snapshot,
+    numeric_delta,
+    parse_bytes,
     process_snapshot,
     sha256_text,
     write_json,
@@ -89,10 +91,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
     parser.add_argument(
         "--backend",
-        choices=("transformers", "bf16-reference", "int8-reference"),
+        choices=(
+            "transformers",
+            "bf16-reference",
+            "int8-reference",
+            "int8-native",
+            "int8-native-streaming",
+        ),
         default="transformers",
     )
     parser.add_argument("--int8-container")
+    parser.add_argument("--cache-bytes", default="4GiB")
     parser.add_argument("--threads", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args(argv)
@@ -145,20 +154,29 @@ def main(argv: list[str] | None = None) -> int:
     else:
         if args.dtype != "bf16":
             parser.error("SparseFlow reference choice scoring currently requires bf16")
-        if args.backend == "int8-reference" and not args.int8_container:
-            parser.error("int8-reference backend requires --int8-container")
+        if args.backend.startswith("int8-") and not args.int8_container:
+            parser.error("INT8 backends require --int8-container")
         from sparseflow.text_runtime import Qwen36TextRuntime
 
+        storage = {
+            "bf16-reference": "bf16",
+            "int8-reference": "int8-reference",
+            "int8-native": "int8-native",
+            "int8-native-streaming": "int8-native",
+        }[args.backend]
+        mode = "streaming" if args.backend == "int8-native-streaming" else "resident"
         model_start = time.perf_counter()
         sparseflow_runtime = Qwen36TextRuntime.from_pretrained(
             model_dir,
-            mode="resident",
+            mode=mode,
             dtype="bf16",
             load_mode="memory-native",
-            expert_storage=(
-                "int8-reference" if args.backend == "int8-reference" else "bf16"
-            ),
+            expert_storage=storage,
             int8_container=args.int8_container,
+            cache_slots=None,
+            cache_bytes=(parse_bytes(args.cache_bytes) if mode == "streaming" else None),
+            cache_policy="lru",
+            prefetch_policy="none",
             telemetry_level="none",
             experts_implementation="eager",
         )
@@ -173,6 +191,9 @@ def main(argv: list[str] | None = None) -> int:
 
     result: dict[str, Any] = {
         "schema_version": 2,
+        "kind": "sparseflow_stage7_5_6_choice_score",
+        "stage": "7.5.6",
+        "agent": "Main Dev",
         "backend": f"{args.backend}_cpu_choice_score",
         "model": model_snapshot(model_dir),
         "runtime": {
@@ -204,10 +225,24 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     for index, row in enumerate(rows):
-        choice_scores = [
-            score_one(model, tokenizer, row["ctx"], choice, torch)
-            for choice in row["choices"]
-        ]
+        before_provider = (
+            sparseflow_runtime.provider.counters()
+            if sparseflow_runtime is not None and sparseflow_runtime.provider is not None
+            else None
+        )
+        choice_scores = []
+        for choice_index, choice in enumerate(row["choices"]):
+            if sparseflow_runtime is not None and sparseflow_runtime.provider is not None:
+                sparseflow_runtime.provider.begin_forward(
+                    index * len(row["choices"]) + choice_index,
+                    "prefill",
+                )
+            choice_scores.append(score_one(model, tokenizer, row["ctx"], choice, torch))
+        after_provider = (
+            sparseflow_runtime.provider.counters()
+            if sparseflow_runtime is not None and sparseflow_runtime.provider is not None
+            else None
+        )
         best = max(range(len(choice_scores)), key=lambda item: choice_scores[item]["loglikelihood"])
         best_char = max(
             range(len(choice_scores)),
@@ -231,6 +266,11 @@ def main(argv: list[str] | None = None) -> int:
                 "correct_norm_char": best_char == int(row["gold"]),
                 "correct_norm_token": best_token == int(row["gold"]),
                 "choices": choice_scores,
+                "provider_delta": (
+                    numeric_delta(before_provider, after_provider)
+                    if before_provider is not None and after_provider is not None
+                    else None
+                ),
             }
         )
         write_json(args.output, result)
