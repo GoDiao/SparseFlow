@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from sparseflow.benchmark import generate_trace, load_trace, parse_byte_budgets, run_expert_benchmark
+from sparseflow.buffers import BufferPool
 from sparseflow.cache import ExpertCache
 from sparseflow.cache_policy import make_cache_policy
 from sparseflow.loader import ShardReader
@@ -32,6 +33,20 @@ def write_shard(path: Path, tensors):
 
 
 class ExpertCacheTest(unittest.TestCase):
+    def test_buffer_pool_reuses_bounded_size_classes(self):
+        pool = BufferPool(max_cached_bytes=8, max_per_size=1)
+        first = pool.acquire(4)
+        pool.release(first)
+        second = pool.acquire(4)
+        self.assertIs(second, first)
+        pool.release(second)
+        pool.release(bytearray(4))
+
+        self.assertEqual(pool.stats.allocations, 1)
+        self.assertEqual(pool.stats.reuses, 1)
+        self.assertEqual(pool.stats.dropped, 1)
+        self.assertLessEqual(pool.cached_bytes, 8)
+
     def test_lightweight_counters_skip_policy_diagnostics(self):
         policy = make_cache_policy("heat", max_hot_entries=1)
         cache = ExpertCache(max_bytes=16, policy=policy)

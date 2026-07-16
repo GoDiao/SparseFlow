@@ -112,7 +112,9 @@ class ExpertProviderTest(unittest.TestCase):
                         self.assertTrue(torch.equal(left["gate_up_proj"], right["gate_up_proj"]))
                         self.assertTrue(torch.equal(left["down_proj"], right["down_proj"]))
                 self.assertEqual(resident.storage_report()["bytes_after_preload"], 0)
-                self.assertGreater(streaming.storage_report()["reader_bytes"], 0)
+                streaming_report = streaming.storage_report()
+                self.assertGreater(streaming_report["reader_bytes"], 0)
+                self.assertGreater(streaming_report["buffer_pool"]["reuses"], 0)
             finally:
                 resident.close()
                 streaming.close()
@@ -132,3 +134,6 @@ class ExpertProviderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# [Main Dev]

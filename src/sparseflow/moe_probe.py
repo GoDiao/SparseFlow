@@ -8,6 +8,7 @@ import time
 from typing import Any, Callable
 
 from .cache import CachedExpert, ExpertCache
+from .buffers import BufferPool
 from .loader import ShardReader, read_expert_bytes
 from .locator import ExpertLocator
 
@@ -182,6 +183,18 @@ class CachedExpertProvider:
         self._timings_ms = {
             "tensor_decode_view": 0.0,
         }
+        pool_budget = min(
+            64 * 1024**2,
+            cache.max_bytes if cache.max_bytes is not None else 64 * 1024**2,
+        )
+        self._buffer_pool = (
+            BufferPool(pool_budget)
+            if prefetch_workers == 0
+            and pool_budget > 0
+            and cache.capacity_per_layer != 0
+            and cache.policy.policy_id != "none"
+            else None
+        )
 
     def __enter__(self) -> "CachedExpertProvider":
         return self
@@ -231,7 +244,7 @@ class CachedExpertProvider:
             calls_before = self.reader.read_calls
             bytes_before = self.reader.read_bytes
             started = time.perf_counter()
-            payloads = self.reader.read_expert_into(location)
+            payloads = self._read_demand_payloads(location)
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             with self._prefetch_lock:
                 entry = self.cache.put_loaded(layer, expert_id, payloads)
@@ -254,7 +267,7 @@ class CachedExpertProvider:
             calls_before = self.reader.read_calls
             bytes_before = self.reader.read_bytes
             started = time.perf_counter()
-            payloads = self.reader.read_expert_into(location)
+            payloads = self._read_demand_payloads(location)
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             entry = self.cache.put_loaded(layer, expert_id, payloads)
             self._demand_metrics["read_calls"] += self.reader.read_calls - calls_before
@@ -290,11 +303,30 @@ class CachedExpertProvider:
             self._decoded.pop(key, None)
         return weights
 
+    def _read_demand_payloads(self, location) -> dict[str, bytearray]:
+        if self._buffer_pool is None:
+            return self.reader.read_expert_into(location)
+        payloads: dict[str, bytearray] = {}
+        try:
+            for item in location:
+                payload = self._buffer_pool.acquire(item.nbytes)
+                self.reader.readinto(item.shard, item.file_offset, payload)
+                payloads[item.part] = payload
+        except Exception:
+            for payload in payloads.values():
+                self._buffer_pool.release(payload)
+            raise
+        return payloads
+
     def _on_cache_evict(self, entry: CachedExpert) -> None:
         key = (entry.layer, entry.expert_id)
         decoded = self._decoded.get(key)
         if decoded is not None and decoded[0] is entry:
             self._decoded.pop(key, None)
+        if self._buffer_pool is not None:
+            for payload in entry.parts.values():
+                if isinstance(payload, bytearray):
+                    self._buffer_pool.release(payload)
 
     @property
     def decoded_entries(self) -> int:
@@ -587,6 +619,9 @@ class CachedExpertProvider:
                 },
                 "forward": self._forward,
                 "phase": self._phase,
+                "buffer_pool_reuses": (
+                    self._buffer_pool.stats.reuses if self._buffer_pool is not None else 0
+                ),
             }
 
     def storage_report(self) -> dict[str, Any]:
@@ -599,6 +634,9 @@ class CachedExpertProvider:
             "prefetch_policy": self.prefetch_policy,
             "prefetch_budget_ratio": self.prefetch_budget_ratio,
             "prefetch": self.prefetch_stats(),
+            "buffer_pool": (
+                self._buffer_pool.as_dict() if self._buffer_pool is not None else None
+            ),
         }
 
     def close(self) -> None:
@@ -607,6 +645,8 @@ class CachedExpertProvider:
         executor = self._executor
         if executor is not None:
             executor.shutdown(wait=True)
+        if self._buffer_pool is not None:
+            self._buffer_pool.clear()
             self._executor = None
 
 
