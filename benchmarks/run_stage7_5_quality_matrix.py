@@ -67,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--threads", type=int, default=10)
     parser.add_argument("--timeout-seconds", type=int, default=10800)
+    parser.add_argument("--levels", help="Optional comma-separated level filter.")
+    parser.add_argument("--backends", help="Optional comma-separated backend filter.")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -101,7 +103,19 @@ def main(argv: list[str] | None = None) -> int:
     source = str(root / "src")
     env["PYTHONPATH"] = source + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
 
-    matrix = cells()
+    selected_levels = set(args.levels.split(",")) if args.levels else set(LEVELS)
+    selected_backends = set(args.backends.split(",")) if args.backends else set(BACKENDS)
+    unknown_levels = selected_levels - set(LEVELS)
+    unknown_backends = selected_backends - set(BACKENDS)
+    if unknown_levels or unknown_backends:
+        parser.error(
+            f"unknown levels/backends: {sorted(unknown_levels)}, {sorted(unknown_backends)}"
+        )
+    matrix = tuple(
+        (level, backend)
+        for level, backend in cells()
+        if level in selected_levels and backend in selected_backends
+    )
     for index, (level, backend) in enumerate(matrix, 1):
         output = output_dir / f"{level}-{backend}.json"
         command = command_for(
