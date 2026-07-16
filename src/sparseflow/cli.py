@@ -92,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     int8_convert_p.add_argument("--layers", help="Layer list/ranges, e.g. 0-3 or 0,2,4.")
     int8_convert_p.add_argument("--threads", type=int, default=10)
     int8_convert_p.add_argument("--no-resume", action="store_true")
+    int8_convert_p.add_argument("--report", help="Write the conversion result JSON.")
     int8_convert_p.add_argument("--json", action="store_true")
 
     for command, help_text in (
@@ -412,6 +413,13 @@ def main(argv: list[str] | None = None) -> int:
                     flush=True,
                 ),
             )
+            if args.report:
+                report = Path(args.report).expanduser()
+                report.parent.mkdir(parents=True, exist_ok=True)
+                report.write_text(
+                    json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
             print(
                 json.dumps(result, indent=2, ensure_ascii=False)
                 if args.json

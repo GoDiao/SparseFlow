@@ -97,6 +97,7 @@ class Int8ContainerTest(unittest.TestCase):
             root = Path(temp)
             model = root / "model"
             output = root / "int8"
+            report = root / "report.json"
             model.mkdir()
             write_fixture(model)
             stdout = StringIO()
@@ -111,11 +112,14 @@ class Int8ContainerTest(unittest.TestCase):
                         "0",
                         "--threads",
                         "1",
+                        "--report",
+                        str(report),
                         "--json",
                     ]
                 )
             self.assertEqual(exit_code, 0)
             self.assertEqual(json.loads(stdout.getvalue())["format_id"], "canonical-int8-v1")
+            self.assertEqual(json.loads(report.read_text())["experts"], 2)
 
 
 if __name__ == "__main__":
