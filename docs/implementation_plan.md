@@ -283,6 +283,15 @@ BF16 routed weights 变为 30.078 GiB physical（50.13%），转换峰值 RSS
 630.84 MiB。全层 checksum resume、4 KiB 对齐、首中尾反量化抽样全部通过。
 结果见 `docs/results/qwen36_stage7_5_2_int8_container_20260716.md`。[Main Dev]
 
+### Phase 7.5.3 status: INT8 reference runtime complete
+
+INT8 resident/streaming 已接入完整 40-layer text runtime，并共用同一
+dequant-to-BF16 和 eager expert kernel。32-token 的 logits/routes/IDs exact；
+4 GiB streaming 为 0.923 tok/s、9.91 GiB current RSS、335.20 MiB/decode token。
+BF16/INT8 teacher-forced logit、KL、top-k 与 toy choice scoring 已记录；标准
+HellaSwag/ARC/MMLU 矩阵留到 7.5.6。结果见
+`docs/results/qwen36_stage7_5_3_int8_reference_20260716.md`。[Main Dev]
+
 ## Early Non-goals
 
 - 阶段 6 暂不支持 vision 输入、MTP/speculative decoding 和生产级 serving。
