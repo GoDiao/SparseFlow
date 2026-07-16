@@ -1,0 +1,1260 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_5_observer_effect",
+  "stage": "7.5.0",
+  "agent": "Main Dev",
+  "created_utc": "2026-07-16T12:34:28.451222+00:00",
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "config_sha256": "93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99",
+    "index_sha256": "41b9356101ebf8e7519e150dc811f80c4226e727301fbb032b890f006ed0be83",
+    "config": {
+      "architectures": [
+        "Qwen3_5MoeForConditionalGeneration"
+      ],
+      "image_token_id": 248056,
+      "model_type": "qwen3_5_moe",
+      "text_config": {
+        "attention_bias": false,
+        "attention_dropout": 0.0,
+        "attn_output_gate": true,
+        "bos_token_id": 248044,
+        "dtype": "bfloat16",
+        "eos_token_id": 248044,
+        "full_attention_interval": 4,
+        "head_dim": 256,
+        "hidden_act": "silu",
+        "hidden_size": 2048,
+        "initializer_range": 0.02,
+        "layer_types": [
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention",
+          "linear_attention",
+          "linear_attention",
+          "linear_attention",
+          "full_attention"
+        ],
+        "linear_conv_kernel_dim": 4,
+        "linear_key_head_dim": 128,
+        "linear_num_key_heads": 16,
+        "linear_num_value_heads": 32,
+        "linear_value_head_dim": 128,
+        "mamba_ssm_dtype": "float32",
+        "max_position_embeddings": 262144,
+        "model_type": "qwen3_5_moe_text",
+        "moe_intermediate_size": 512,
+        "mtp_num_hidden_layers": 1,
+        "mtp_use_dedicated_embeddings": false,
+        "num_attention_heads": 16,
+        "num_experts": 256,
+        "num_experts_per_tok": 8,
+        "num_hidden_layers": 40,
+        "num_key_value_heads": 2,
+        "output_router_logits": false,
+        "pad_token_id": null,
+        "partial_rotary_factor": 0.25,
+        "rms_norm_eps": 1e-06,
+        "rope_parameters": {
+          "mrope_interleaved": true,
+          "mrope_section": [
+            11,
+            11,
+            10
+          ],
+          "partial_rotary_factor": 0.25,
+          "rope_theta": 10000000,
+          "rope_type": "default"
+        },
+        "router_aux_loss_coef": 0.001,
+        "shared_expert_intermediate_size": 512,
+        "tie_word_embeddings": false,
+        "use_cache": true,
+        "vocab_size": 248320
+      },
+      "tie_word_embeddings": false,
+      "transformers_version": "4.57.1",
+      "video_token_id": 248057,
+      "vision_config": {
+        "deepstack_visual_indexes": [],
+        "depth": 27,
+        "hidden_act": "gelu_pytorch_tanh",
+        "hidden_size": 1152,
+        "in_channels": 3,
+        "initializer_range": 0.02,
+        "intermediate_size": 4304,
+        "model_type": "qwen3_5_moe",
+        "num_heads": 16,
+        "num_position_embeddings": 2304,
+        "out_hidden_size": 2048,
+        "patch_size": 16,
+        "spatial_merge_size": 2,
+        "temporal_patch_size": 2
+      },
+      "vision_end_token_id": 248054,
+      "vision_start_token_id": 248053
+    }
+  },
+  "git": {
+    "commit": "8a21d80fb669dfc717f9295cb4d2e5c0240e0d15",
+    "branch": "main",
+    "dirty": true
+  },
+  "host": {
+    "platform": "Linux-5.15.0-113-generic-x86_64-with-glibc2.35",
+    "python": "3.12.11",
+    "cpu_count": 20,
+    "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
+    "memory_total_bytes": 135066406912,
+    "memory_available_bytes": 130017251328,
+    "numa_nodes": "0",
+    "pid": 22022
+  },
+  "protocol": {
+    "variant": "C3-R",
+    "load_mode": "memory-native",
+    "dtype": "bf16",
+    "threads": 10,
+    "runs_per_level": 3,
+    "max_new_tokens": 8,
+    "levels": [
+      "none",
+      "summary",
+      "layer"
+    ],
+    "order": "rotated Latin order within one loaded runtime"
+  },
+  "records": [
+    {
+      "repetition": 0,
+      "telemetry_level": "none",
+      "wall_seconds": 5.6057562579999285,
+      "prefill_seconds": 3.3741521970000576,
+      "decode_seconds": 2.200136616999771,
+      "decode_tokens_per_second": 3.1816206075173596,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.0,
+      "telemetry_forwards": 0,
+      "telemetry_records": 0
+    },
+    {
+      "repetition": 0,
+      "telemetry_level": "summary",
+      "wall_seconds": 5.6942973109999,
+      "prefill_seconds": 3.50367819100029,
+      "decode_seconds": 2.1607428009992873,
+      "decode_tokens_per_second": 3.2396266676268377,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.008416393000970857,
+      "telemetry_forwards": 8,
+      "telemetry_records": 0
+    },
+    {
+      "repetition": 0,
+      "telemetry_level": "layer",
+      "wall_seconds": 5.689271457999894,
+      "prefill_seconds": 3.3734751400002096,
+      "decode_seconds": 2.2872399900002165,
+      "decode_tokens_per_second": 3.0604571582360878,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.024623265003810957,
+      "telemetry_forwards": 8,
+      "telemetry_records": 320,
+      "timing_breakdown": {
+        "runtime_ms": {
+          "router": 65.30405500507186,
+          "dispatch": 241.9209299796421,
+          "prepare": 1.1412429980737215,
+          "provider_get": 58.46542600329485,
+          "expert_kernel": 1745.411819993933,
+          "routing_accumulation": 464.88194198445854
+        },
+        "provider_ms": {
+          "timing_cache_lookup_ms_total": 0,
+          "timing_victim_selection_ms_total": 0,
+          "timing_allocation_reuse_ms_total": 0,
+          "timing_policy_maintenance_ms_total": 0,
+          "timing_tensor_decode_view_ms_total": 0,
+          "timing_pread_ms_total": 0
+        },
+        "layer_total_ms": 2539.8526529975243,
+        "categorized_critical_path_ms": 2511.821360959402
+      },
+      "critical_path_closure_ratio": 0.9889634180136239
+    },
+    {
+      "repetition": 1,
+      "telemetry_level": "summary",
+      "wall_seconds": 5.394866210000146,
+      "prefill_seconds": 3.3100519079998776,
+      "decode_seconds": 2.0560187770001903,
+      "decode_tokens_per_second": 3.4046381668815626,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.006967030997657275,
+      "telemetry_forwards": 8,
+      "telemetry_records": 0
+    },
+    {
+      "repetition": 1,
+      "telemetry_level": "layer",
+      "wall_seconds": 5.699312652999652,
+      "prefill_seconds": 3.4266962960000455,
+      "decode_seconds": 2.2449906830001964,
+      "decode_tokens_per_second": 3.1180530293538804,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.022653226999409526,
+      "telemetry_forwards": 8,
+      "telemetry_records": 320,
+      "timing_breakdown": {
+        "runtime_ms": {
+          "router": 62.68807500009643,
+          "dispatch": 228.63611197590217,
+          "prepare": 1.0613099952934135,
+          "provider_get": 54.60061798794413,
+          "expert_kernel": 1727.9791360037962,
+          "routing_accumulation": 438.9095739898039
+        },
+        "provider_ms": {
+          "timing_cache_lookup_ms_total": 0,
+          "timing_victim_selection_ms_total": 0,
+          "timing_allocation_reuse_ms_total": 0,
+          "timing_policy_maintenance_ms_total": 0,
+          "timing_tensor_decode_view_ms_total": 0,
+          "timing_pread_ms_total": 0
+        },
+        "layer_total_ms": 2478.108617001908,
+        "categorized_critical_path_ms": 2451.18674995274
+      },
+      "critical_path_closure_ratio": 0.9891361230639926
+    },
+    {
+      "repetition": 1,
+      "telemetry_level": "none",
+      "wall_seconds": 5.292700733999936,
+      "prefill_seconds": 3.219878952000272,
+      "decode_seconds": 2.0442072400001052,
+      "decode_tokens_per_second": 3.424310345363829,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.0,
+      "telemetry_forwards": 0,
+      "telemetry_records": 0
+    },
+    {
+      "repetition": 2,
+      "telemetry_level": "layer",
+      "wall_seconds": 5.353367626999898,
+      "prefill_seconds": 3.2021280550002302,
+      "decode_seconds": 2.1229031470002155,
+      "decode_tokens_per_second": 3.2973713425840474,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.022640213000613585,
+      "telemetry_forwards": 8,
+      "telemetry_records": 320,
+      "timing_breakdown": {
+        "runtime_ms": {
+          "router": 64.81770700020206,
+          "dispatch": 218.3965679978428,
+          "prepare": 1.1158509987581056,
+          "provider_get": 50.83124499924452,
+          "expert_kernel": 1653.126912992775,
+          "routing_accumulation": 412.3400479970769
+        },
+        "provider_ms": {
+          "timing_cache_lookup_ms_total": 0,
+          "timing_victim_selection_ms_total": 0,
+          "timing_allocation_reuse_ms_total": 0,
+          "timing_policy_maintenance_ms_total": 0,
+          "timing_tensor_decode_view_ms_total": 0,
+          "timing_pread_ms_total": 0
+        },
+        "layer_total_ms": 2361.42353200421,
+        "categorized_critical_path_ms": 2335.8106249856974
+      },
+      "critical_path_closure_ratio": 0.9891536157443244
+    },
+    {
+      "repetition": 2,
+      "telemetry_level": "none",
+      "wall_seconds": 5.2468142849998,
+      "prefill_seconds": 3.1847118540003976,
+      "decode_seconds": 2.034522655999808,
+      "decode_tokens_per_second": 3.440610493747512,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.0,
+      "telemetry_forwards": 0,
+      "telemetry_records": 0
+    },
+    {
+      "repetition": 2,
+      "telemetry_level": "summary",
+      "wall_seconds": 5.447319353000239,
+      "prefill_seconds": 3.385214406999694,
+      "decode_seconds": 2.03419778100033,
+      "decode_tokens_per_second": 3.441159982269622,
+      "generated_ids": [
+        8160,
+        579,
+        264,
+        7047,
+        1817,
+        25,
+        271,
+        16
+      ],
+      "logit_fingerprints": [
+        {
+          "sha256": "3ed3a730fbad47e6edfeecd03273d969ad1cf9fdf8e657c0d43b6fb85ca2423e",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            8160
+          ]
+        },
+        {
+          "sha256": "65ab3fa4f3359fc61797c17cfafd22a3c3bad49be120051d98d77d35f0075d4a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            579
+          ]
+        },
+        {
+          "sha256": "941490441e19ced211c651d48db2993cb9f4385acdac3a0c22e094115ac5c44f",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            264
+          ]
+        },
+        {
+          "sha256": "3ffddb16c8627aaf1284bcaa40ba499b233182b55fce87e17711bf4201c0347a",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            7047
+          ]
+        },
+        {
+          "sha256": "7419f3239610db3cb9ce3e6d39944c888d217071710993c87d52d656d0e25521",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            1817
+          ]
+        },
+        {
+          "sha256": "d9d79e9d8e83643c8572c94f9ecca0a937164c26f9155cbc0ca97802b6ee674c",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            25
+          ]
+        },
+        {
+          "sha256": "4c30aae75176c22363628f06f1b96c104a69b69cfc800dd26229f620980f5190",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            271
+          ]
+        },
+        {
+          "sha256": "30598db562c96f6661c4e994d9e1c0de97d6555933ee0a9268293c9d02d1e6f7",
+          "dtype": "bfloat16",
+          "shape": [
+            1,
+            248320
+          ],
+          "argmax": [
+            16
+          ]
+        }
+      ],
+      "observer_seconds": 0.005842128995936946,
+      "telemetry_forwards": 8,
+      "telemetry_records": 0
+    }
+  ],
+  "summary": {
+    "none": {
+      "runs": 3,
+      "median_prefill_seconds": 3.219878952000272,
+      "median_decode_tokens_per_second": 3.424310345363829,
+      "median_wall_seconds": 5.292700733999936,
+      "median_observer_seconds": 0.0
+    },
+    "summary": {
+      "runs": 3,
+      "median_prefill_seconds": 3.385214406999694,
+      "median_decode_tokens_per_second": 3.4046381668815626,
+      "median_wall_seconds": 5.447319353000239,
+      "median_observer_seconds": 0.006967030997657275,
+      "decode_throughput_delta_ratio_vs_none": -0.0057448585257176,
+      "wall_delta_ratio_vs_none": 0.029213557835802817
+    },
+    "layer": {
+      "runs": 3,
+      "median_prefill_seconds": 3.3734751400002096,
+      "median_decode_tokens_per_second": 3.1180530293538804,
+      "median_wall_seconds": 5.689271457999894,
+      "median_observer_seconds": 0.022653226999409526,
+      "median_critical_path_closure_ratio": 0.9891361230639926,
+      "decode_throughput_delta_ratio_vs_none": -0.08943620324150525,
+      "wall_delta_ratio_vs_none": 0.07492785704893823
+    }
+  },
+  "acceptance": {
+    "all_logits_and_ids_exact": true,
+    "summary_decode_delta_within_3_percent": true,
+    "summary_records_are_aggregated": true,
+    "critical_path_closes_within_5_percent": true,
+    "timing_categories_present": true,
+    "all_pass": true
+  }
+}
