@@ -1282,6 +1282,153 @@ def compare_bf16_int8_quantization(
             "argmax_equal_steps": sum(item["argmax_equal"] for item in steps),
         },
     }
+
+
+def compare_int8_native_quantization(
+    model_dir: str | Path,
+    int8_container: str | Path,
+    prompt: str,
+    max_new_tokens: int = 32,
+    top_k: int = 10,
+) -> dict[str, Any]:
+    """Isolate W8A8 native-kernel loss from canonical INT8 weight loss."""
+
+    import torch
+    import torch.nn.functional as functional
+
+    if max_new_tokens < 1 or top_k < 1:
+        raise ValueError("max_new_tokens and top_k must be positive")
+    root = Path(model_dir).expanduser().resolve()
+    container = Path(int8_container).expanduser().resolve()
+
+    load_started = time.perf_counter()
+    reference_runtime = Qwen36TextRuntime.from_pretrained(
+        root,
+        mode="resident",
+        dtype="bf16",
+        load_mode="memory-native",
+        expert_storage="int8-reference",
+        int8_container=container,
+        telemetry_level="none",
+        experts_implementation="eager",
+    )
+    reference_load_seconds = time.perf_counter() - load_started
+    try:
+        reference = reference_runtime.greedy_generate(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            record_logit_fingerprints=True,
+            capture_logits=True,
+        )
+    finally:
+        reference_runtime.close()
+    reference_logits = reference.pop("captured_logits")
+    gc.collect()
+
+    load_started = time.perf_counter()
+    native_runtime = Qwen36TextRuntime.from_pretrained(
+        root,
+        mode="resident",
+        dtype="bf16",
+        load_mode="memory-native",
+        expert_storage="int8-native",
+        int8_container=container,
+        telemetry_level="none",
+        experts_implementation="eager",
+    )
+    native_load_seconds = time.perf_counter() - load_started
+    try:
+        native_greedy = native_runtime.greedy_generate(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            record_logit_fingerprints=True,
+        )
+        native_logits = native_runtime.teacher_forced_logits(
+            prompt,
+            reference["generated_ids"],
+        )
+    finally:
+        native_runtime.close()
+
+    steps = []
+    for index, (left, right) in enumerate(zip(reference_logits, native_logits)):
+        difference = (right - left).abs()
+        left_log_probs = functional.log_softmax(left, dim=-1)
+        right_log_probs = functional.log_softmax(right, dim=-1)
+        probabilities = left_log_probs.exp()
+        kl = (probabilities * (left_log_probs - right_log_probs)).sum(dim=-1)
+        left_top = set(int(value) for value in left.topk(top_k, dim=-1).indices[0])
+        right_top = set(int(value) for value in right.topk(top_k, dim=-1).indices[0])
+        steps.append(
+            {
+                "step": index,
+                "max_abs_logit_error": float(difference.max()),
+                "mean_abs_logit_error": float(difference.mean()),
+                "kl_reference_to_native": float(kl.item()),
+                "top_k": top_k,
+                "top_k_overlap": len(left_top & right_top) / top_k,
+                "reference_argmax": int(left.argmax(dim=-1).item()),
+                "native_argmax_on_reference_path": int(right.argmax(dim=-1).item()),
+                "argmax_equal": bool(torch.equal(left.argmax(dim=-1), right.argmax(dim=-1))),
+            }
+        )
+    first_divergence = next(
+        (
+            index
+            for index, (left, right) in enumerate(
+                zip(reference["generated_ids"], native_greedy["generated_ids"])
+            )
+            if left != right
+        ),
+        None,
+    )
+    return {
+        "schema_version": 1,
+        "kind": "qwen3_5_stage7_5_int8_native_activation_quality",
+        "stage": "7.5.4",
+        "agent": "Main Dev",
+        "model": str(root),
+        "int8_container": str(container),
+        "prompt": prompt,
+        "max_new_tokens": max_new_tokens,
+        "comparison_path": "W8A8 native teacher-forced on W8A16 reference greedy continuation",
+        "reference": {
+            "load_seconds": reference_load_seconds,
+            "generated_ids": reference["generated_ids"],
+            "text": reference["text"],
+            "logit_fingerprints": reference["logit_fingerprints"],
+        },
+        "native": {
+            "load_seconds": native_load_seconds,
+            "generated_ids": native_greedy["generated_ids"],
+            "text": native_greedy["text"],
+            "logit_fingerprints": native_greedy["logit_fingerprints"],
+        },
+        "greedy": {
+            "first_divergence": first_divergence,
+            "matching_prefix_tokens": (
+                first_divergence if first_divergence is not None else max_new_tokens
+            ),
+        },
+        "teacher_forced_steps": steps,
+        "summary": {
+            "max_abs_logit_error": max(item["max_abs_logit_error"] for item in steps),
+            "mean_abs_logit_error": sum(
+                item["mean_abs_logit_error"] for item in steps
+            )
+            / len(steps),
+            "max_kl_reference_to_native": max(
+                item["kl_reference_to_native"] for item in steps
+            ),
+            "mean_kl_reference_to_native": sum(
+                item["kl_reference_to_native"] for item in steps
+            )
+            / len(steps),
+            "mean_top_k_overlap": sum(item["top_k_overlap"] for item in steps)
+            / len(steps),
+            "argmax_equal_steps": sum(item["argmax_equal"] for item in steps),
+        },
+    }
 def compare_int8_native_paths(*args, **kwargs) -> dict[str, Any]:
     kwargs["expert_storage"] = "int8-native"
     return compare_int8_reference_paths(*args, **kwargs)

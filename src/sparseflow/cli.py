@@ -31,6 +31,7 @@ from .moe_runtime import compare_multilayer_moe_paths
 from .text_runtime import (
     Qwen36TextRuntime,
     compare_bf16_int8_quantization,
+    compare_int8_native_quantization,
     compare_int8_reference_paths,
     compare_int8_native_paths,
     compare_sparseflow_policy_paths,
@@ -368,6 +369,12 @@ def main(argv: list[str] | None = None) -> int:
     int8_quality_p.add_argument("--prompt", required=True)
     int8_quality_p.add_argument("--max-new-tokens", type=int, default=32)
     int8_quality_p.add_argument("--top-k", type=int, default=10)
+    int8_quality_p.add_argument(
+        "--kernel",
+        choices=("reference", "native"),
+        default="reference",
+        help="reference compares BF16/W8A16; native compares W8A16/W8A8.",
+    )
     int8_quality_p.add_argument("--output")
     int8_quality_p.add_argument("--json", action="store_true")
 
@@ -709,7 +716,12 @@ def main(argv: list[str] | None = None) -> int:
             print(encoded if args.json else _format_runtime_check(result))
             return 0 if result["all_invariants_pass"] else 1
         if args.command == "int8-quality-check":
-            result = compare_bf16_int8_quantization(
+            compare_quality = (
+                compare_int8_native_quantization
+                if args.kernel == "native"
+                else compare_bf16_int8_quantization
+            )
+            result = compare_quality(
                 args.model,
                 args.int8_container,
                 prompt=args.prompt,
@@ -1035,14 +1047,18 @@ def _format_runtime_check(result: dict[str, Any]) -> str:
 
 def _format_int8_quality(result: dict[str, Any]) -> str:
     summary = result["summary"]
+    max_kl = summary.get(
+        "max_kl_reference_to_native",
+        summary.get("max_kl_bf16_to_int8"),
+    )
     return "\n".join(
         [
-            "SparseFlow Stage 7.5.3 INT8 quality-check",
+            f"SparseFlow Stage {result['stage']} INT8 quality-check",
             f"first divergence  {result['greedy']['first_divergence']}",
             f"matching prefix   {result['greedy']['matching_prefix_tokens']}",
             f"max logit error   {summary['max_abs_logit_error']:.6g}",
             f"mean logit error  {summary['mean_abs_logit_error']:.6g}",
-            f"max KL            {summary['max_kl_bf16_to_int8']:.6g}",
+            f"max KL            {max_kl:.6g}",
             f"mean top-k overlap {summary['mean_top_k_overlap']:.4f}",
             f"argmax equal      {summary['argmax_equal_steps']}/{result['max_new_tokens']}",
         ]

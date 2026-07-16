@@ -521,6 +521,41 @@ class TextRuntimeTest(unittest.TestCase):
             )
         )
 
+    def test_int8_native_quality_cli_selects_native_boundary(self):
+        result = {
+            "stage": "7.5.4",
+            "max_new_tokens": 1,
+            "greedy": {"first_divergence": None, "matching_prefix_tokens": 1},
+            "summary": {
+                "max_abs_logit_error": 0.1,
+                "mean_abs_logit_error": 0.01,
+                "max_kl_reference_to_native": 0.001,
+                "mean_top_k_overlap": 1.0,
+                "argmax_equal_steps": 1,
+            },
+        }
+        with patch(
+            "sparseflow.cli.compare_int8_native_quantization",
+            return_value=result,
+        ) as compare:
+            with redirect_stdout(StringIO()):
+                exit_code = main(
+                    [
+                        "int8-quality-check",
+                        "/tmp/model",
+                        "--int8-container",
+                        "/tmp/int8",
+                        "--prompt",
+                        "hello",
+                        "--max-new-tokens",
+                        "1",
+                        "--kernel",
+                        "native",
+                    ]
+                )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(compare.call_args.args[:2], ("/tmp/model", "/tmp/int8"))
+
     def test_stage73_policy_check_reuses_resident_reference_and_checks_accounting(self):
         base = {
             "input_ids": [1],
