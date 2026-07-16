@@ -268,6 +268,14 @@ Provider hot counters、policy diagnostics 和 telemetry 已拆分；summary 路
 logits/IDs exact，详细关键路径闭合 `98.73%`。结果见
 `docs/results/qwen36_stage7_5_0_observer_20260716.md`。[Main Dev]
 
+### Phase 7.5.1 status: BF16 hot path complete
+
+已完成 O(1) LRU/counters、精确 decoded-view eviction、no-prefetch fast path、
+direct writable pread 和 bounded BufferPool。冻结的 S1-8G 32-token 对照从
+`0.8263` 提升到 `1.0763 tok/s`（`+30.3%`），同时 median hits/misses、
+`701.61 MiB/token`、routes/logits/IDs 保持一致。结果见
+`docs/results/qwen36_stage7_5_1_bf16_hot_path_20260716.md`。[Main Dev]
+
 ## Early Non-goals
 
 - 阶段 6 暂不支持 vision 输入、MTP/speculative decoding 和生产级 serving。
