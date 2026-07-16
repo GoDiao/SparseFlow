@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
+import time
 from typing import Callable, Mapping, TypeAlias
 
 from .cache_policy import CachePolicy, LRUPolicy
@@ -72,6 +73,7 @@ class ExpertCache:
         capacity_per_layer: int | None = None,
         max_bytes: int | None = None,
         policy: CachePolicy | None = None,
+        collect_timings: bool = False,
     ):
         if capacity_per_layer is None and max_bytes is None:
             raise ValueError("capacity_per_layer or max_bytes is required")
@@ -82,6 +84,7 @@ class ExpertCache:
         self.capacity_per_layer = capacity_per_layer
         self.max_bytes = max_bytes
         self.policy = policy or LRUPolicy()
+        self.collect_timings = collect_timings
         self.stats = CacheStats()
         self._layers: dict[int, OrderedDict[int, CachedExpert]] = {}
         self._global_lru: OrderedDict[tuple[int, int], None] = OrderedDict()
@@ -90,6 +93,12 @@ class ExpertCache:
         self._eviction_listeners: list[Callable[[CachedExpert], None]] = []
         self._phase = "unknown"
         self._forward = -1
+        self._timings_ms = {
+            "cache_lookup": 0.0,
+            "victim_selection": 0.0,
+            "allocation_reuse": 0.0,
+            "policy_maintenance": 0.0,
+        }
 
     @property
     def cached_bytes(self) -> int:
@@ -112,10 +121,14 @@ class ExpertCache:
     def begin_forward(self, forward: int, phase: str) -> None:
         self._forward = forward
         self._phase = phase
+        started = time.perf_counter() if self.collect_timings else None
         self.policy.begin_forward(forward, phase)
+        self._record_timing("policy_maintenance", started)
 
     def observe_routes(self, layer: int, expert_counts: Mapping[int, int]) -> None:
+        started = time.perf_counter() if self.collect_timings else None
         self.policy.observe_routes(layer, expert_counts, self._phase)
+        self._record_timing("policy_maintenance", started)
 
     def lookup(
         self,
@@ -123,12 +136,14 @@ class ExpertCache:
         expert_id: int,
         expected_nbytes: int | None = None,
     ) -> CachedExpert | None:
+        started = time.perf_counter() if self.collect_timings else None
         self.stats.requests += 1
         layer_cache = self._layers.get(layer)
         if layer_cache is None or expert_id not in layer_cache:
             self.stats.misses += 1
             if expected_nbytes is not None:
                 self.stats.miss_bytes += expected_nbytes
+            self._record_timing("cache_lookup", started)
             return None
         entry = layer_cache.pop(expert_id)
         layer_cache[expert_id] = entry
@@ -137,6 +152,7 @@ class ExpertCache:
         self._global_lru[key] = None
         self.stats.hits += 1
         self.stats.hit_bytes += entry.nbytes
+        self._record_timing("cache_lookup", started)
         return entry
 
     def peek(self, layer: int, expert_id: int) -> CachedExpert | None:
@@ -171,10 +187,12 @@ class ExpertCache:
             return existing
         # Keep one writable backing buffer per part so tensor views can be
         # created without a second copy at the runtime adapter boundary.
+        allocation_started = time.perf_counter() if self.collect_timings else None
         normalized = {
             part: data if isinstance(data, bytearray) else bytearray(data)
             for part, data in payloads.items()
         }
+        self._record_timing("allocation_reuse", allocation_started)
         if not normalized:
             raise ValueError(f"loader returned no payloads for layer={layer}, expert={expert_id}")
         entry = CachedExpert(layer=layer, expert_id=expert_id, parts=normalized)
@@ -219,33 +237,42 @@ class ExpertCache:
             return
         if self.max_bytes == 0 or (self.max_bytes is not None and entry.nbytes > self.max_bytes):
             return
-        if not self.policy.should_admit(
+        policy_started = time.perf_counter() if self.collect_timings else None
+        should_admit = self.policy.should_admit(
             (entry.layer, entry.expert_id),
             self._phase,
             source,
-        ):
+        )
+        self._record_timing("policy_maintenance", policy_started)
+        if not should_admit:
             self.stats.admission_rejections += 1
             return
 
         while self.capacity_per_layer is not None and len(layer_cache) >= self.capacity_per_layer:
+            victim_started = time.perf_counter() if self.collect_timings else None
             if type(self.policy) is LRUPolicy:
                 victim = (entry.layer, next(iter(layer_cache)))
             else:
                 candidates = tuple((entry.layer, expert) for expert in layer_cache)
                 victim = self.policy.choose_victim(candidates)
+            self._record_timing("victim_selection", victim_started)
             self._evict_key(victim)
 
         layer_cache[entry.expert_id] = entry
         self._cached_bytes += entry.nbytes
         self._entries += 1
         self._global_lru[(entry.layer, entry.expert_id)] = None
+        policy_started = time.perf_counter() if self.collect_timings else None
         self.policy.on_insert((entry.layer, entry.expert_id), entry.nbytes)
+        self._record_timing("policy_maintenance", policy_started)
 
         while self.max_bytes is not None and self._cached_bytes > self.max_bytes:
+            victim_started = time.perf_counter() if self.collect_timings else None
             if type(self.policy) is LRUPolicy:
                 victim = next(iter(self._global_lru))
             else:
                 victim = self.policy.choose_victim(tuple(self._global_lru))
+            self._record_timing("victim_selection", victim_started)
             self._evict_key(victim)
 
     def _evict_key(self, key: tuple[int, int]) -> None:
@@ -256,7 +283,9 @@ class ExpertCache:
         self._cached_bytes -= old_entry.nbytes
         self._entries -= 1
         self.stats.evictions += 1
+        policy_started = time.perf_counter() if self.collect_timings else None
         self.policy.on_evict(key, old_entry.nbytes)
+        self._record_timing("policy_maintenance", policy_started)
         self._notify_evicted(old_entry)
 
     def _notify_evicted(self, entry: CachedExpert) -> None:
@@ -281,7 +310,14 @@ class ExpertCache:
     def counters(self) -> dict[str, int | float]:
         """Return fixed-cost counters without materializing policy diagnostics."""
 
-        return self.stats.as_dict(self.cached_bytes, self.entries)
+        return {
+            **self.stats.as_dict(self.cached_bytes, self.entries),
+            **{f"timing_{key}_ms_total": value for key, value in self._timings_ms.items()},
+        }
+
+    def _record_timing(self, category: str, started: float | None) -> None:
+        if started is not None:
+            self._timings_ms[category] += (time.perf_counter() - started) * 1000.0
 
     def stats_dict(self, include_policy: bool = True) -> dict[str, object]:
         result: dict[str, object] = dict(self.counters())

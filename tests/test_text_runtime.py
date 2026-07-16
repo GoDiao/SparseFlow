@@ -78,6 +78,7 @@ class TextRuntimeTest(unittest.TestCase):
     def test_layer_telemetry_preserves_forward_phase_and_counter_deltas(self):
         telemetry = RuntimeTelemetry("layer")
         telemetry.begin_forward(1, "decode", 12)
+        telemetry.add_timing("router", 0.25)
         selected = torch.tensor([[1, 2]], dtype=torch.long)
         telemetry.record_layer(
             3,
@@ -93,6 +94,8 @@ class TextRuntimeTest(unittest.TestCase):
         self.assertEqual(result["records"][0]["provider"]["reader_calls"], 2)
         self.assertEqual(result["records"][0]["provider"]["reader_bytes"], 20)
         self.assertEqual(result["forwards"][0]["token_position"], 12)
+        self.assertEqual(result["summary"]["timings_ms"]["router"], 0.25)
+        self.assertEqual(result["records"][0]["timings_ms"]["router"], 0.25)
 
     def test_sparseflow_expert_module_uses_provider_for_shared_dispatch(self):
         class Provider:

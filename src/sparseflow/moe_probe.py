@@ -179,6 +179,9 @@ class CachedExpertProvider:
             "read_bytes": 0,
             "read_ms_total": 0.0,
         }
+        self._timings_ms = {
+            "tensor_decode_view": 0.0,
+        }
 
     def __enter__(self) -> "CachedExpertProvider":
         return self
@@ -264,6 +267,7 @@ class CachedExpertProvider:
         if existing is not None and existing[0] is entry:
             return existing[1]
 
+        decode_started = time.perf_counter() if self.cache.collect_timings else None
         weights = {
             part: _decode_span(
                 location.part(part),
@@ -273,6 +277,10 @@ class CachedExpertProvider:
             )
             for part in ("gate_up_proj", "down_proj")
         }
+        if decode_started is not None:
+            self._timings_ms["tensor_decode_view"] += (
+                time.perf_counter() - decode_started
+            ) * 1000.0
         layer, expert_id = key
         if self.cache.peek(layer, expert_id) is entry:
             self._decoded[key] = (entry, weights)
@@ -564,6 +572,19 @@ class CachedExpertProvider:
                 "prefetch_wasted_ready_bytes": self._prefetch_metrics[
                     "wasted_ready_bytes"
                 ],
+                "timing_pread_ms_total": (
+                    self._demand_metrics["read_ms_total"]
+                    + self._prefetch_metrics["read_ms_total"]
+                ),
+                **{
+                    f"timing_{key}_ms_total": value
+                    for key, value in self._timings_ms.items()
+                },
+                **{
+                    key: value
+                    for key, value in cache.items()
+                    if key.startswith("timing_")
+                },
                 "forward": self._forward,
                 "phase": self._phase,
             }
@@ -1084,12 +1105,16 @@ def run_routed_experts(
     routing_weights,
     routed_loader: Callable[[int], dict[str, Any]],
     prepare_routed: Callable[[tuple[int, ...]], None] | None = None,
+    timing_callback: Callable[[str, float], None] | None = None,
 ):
     """Run only routed experts, reusable by a full Transformer MoE module."""
 
     expert_ids = tuple(int(value) for value in selected_experts.unique(sorted=True).tolist())
     if prepare_routed is not None:
+        started = time.perf_counter() if timing_callback is not None else None
         prepare_routed(expert_ids)
+        if started is not None:
+            timing_callback("prepare", (time.perf_counter() - started) * 1000.0)
     routed_output = hidden_states.new_zeros(hidden_states.shape)
     for expert_id in expert_ids:
         # Match Transformers' Qwen3.5-MoE dispatch order exactly.  Its
@@ -1103,18 +1128,30 @@ def run_routed_experts(
             .nonzero(as_tuple=True)
         )
         current_state = hidden_states[token_indices]
+        started = time.perf_counter() if timing_callback is not None else None
         weights = routed_loader(expert_id)
+        if started is not None:
+            timing_callback("provider_get", (time.perf_counter() - started) * 1000.0)
+        started = time.perf_counter() if timing_callback is not None else None
         current_output = run_expert_kernel(
             current_state,
             weights["gate_up_proj"],
             weights["down_proj"],
         )
+        if started is not None:
+            timing_callback("expert_kernel", (time.perf_counter() - started) * 1000.0)
+        started = time.perf_counter() if timing_callback is not None else None
         current_output = current_output * routing_weights[token_indices, top_positions, None]
         routed_output.index_add_(
             0,
             token_indices,
             current_output.to(routed_output.dtype),
         )
+        if started is not None:
+            timing_callback(
+                "routing_accumulation",
+                (time.perf_counter() - started) * 1000.0,
+            )
     return routed_output
 
 

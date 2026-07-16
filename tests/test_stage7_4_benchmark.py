@@ -20,15 +20,16 @@ class Stage74CommonTest(unittest.TestCase):
             ("summary", 0.99, 2.01),
             ("layer", 0.9, 2.2),
         ):
-            records.append(
-                {
+            record = {
                     "telemetry_level": level,
                     "prefill_seconds": 1.0,
                     "decode_tokens_per_second": speed,
                     "wall_seconds": wall,
                     "observer_seconds": 0.0,
                 }
-            )
+            if level == "layer":
+                record["critical_path_closure_ratio"] = 1.0
+            records.append(record)
         result = summarize_observer(records)
         self.assertAlmostEqual(
             result["summary"]["decode_throughput_delta_ratio_vs_none"], -0.01

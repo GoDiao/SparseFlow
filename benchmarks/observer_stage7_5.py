@@ -35,6 +35,11 @@ def summarize(records: list[dict]) -> dict[str, dict]:
                 item["observer_seconds"] for item in selected
             ),
         }
+        if level == "layer":
+            closures = [item["critical_path_closure_ratio"] for item in selected]
+            result[level]["median_critical_path_closure_ratio"] = statistics.median(
+                closures
+            )
     baseline = result["none"]
     for level in ("summary", "layer"):
         item = result[level]
@@ -107,7 +112,9 @@ def main(argv: list[str] | None = None) -> int:
         mode="resident",
         dtype="bf16",
         load_mode="memory-native",
-        telemetry_level="none",
+        # Install detailed-only router hooks once; each measured run still
+        # switches the telemetry collector to its requested level.
+        telemetry_level="layer",
         experts_implementation="eager",
     )
     try:
@@ -124,25 +131,50 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 wall_seconds = time.perf_counter() - started
                 decode_tokens = generated["generated_tokens"] - 1
-                result["records"].append(
-                    {
-                        "repetition": repetition,
-                        "telemetry_level": level,
-                        "wall_seconds": wall_seconds,
-                        "prefill_seconds": generated["prefill_seconds"],
-                        "decode_seconds": generated["decode_seconds"],
-                        "decode_tokens_per_second": (
-                            decode_tokens / generated["decode_seconds"]
-                            if decode_tokens and generated["decode_seconds"] > 0
-                            else None
-                        ),
-                        "generated_ids": generated["generated_ids"],
-                        "logit_fingerprints": generated["logit_fingerprints"],
-                        "observer_seconds": generated["telemetry"]["observer_seconds"],
-                        "telemetry_forwards": len(generated["telemetry"]["forwards"]),
-                        "telemetry_records": len(generated["telemetry"]["records"]),
+                telemetry = generated["telemetry"]
+                record = {
+                    "repetition": repetition,
+                    "telemetry_level": level,
+                    "wall_seconds": wall_seconds,
+                    "prefill_seconds": generated["prefill_seconds"],
+                    "decode_seconds": generated["decode_seconds"],
+                    "decode_tokens_per_second": (
+                        decode_tokens / generated["decode_seconds"]
+                        if decode_tokens and generated["decode_seconds"] > 0
+                        else None
+                    ),
+                    "generated_ids": generated["generated_ids"],
+                    "logit_fingerprints": generated["logit_fingerprints"],
+                    "observer_seconds": telemetry["observer_seconds"],
+                    "telemetry_forwards": len(telemetry["forwards"]),
+                    "telemetry_records": len(telemetry["records"]),
+                }
+                if level == "layer":
+                    timings = telemetry["summary"]["timings_ms"]
+                    layer_total = telemetry["summary"]["layer_total_ms"]
+                    categorized = sum(
+                        timings.get(key, 0.0)
+                        for key in (
+                            "prepare",
+                            "provider_get",
+                            "expert_kernel",
+                            "routing_accumulation",
+                        )
+                    )
+                    record["timing_breakdown"] = {
+                        "runtime_ms": timings,
+                        "provider_ms": {
+                            key: value
+                            for key, value in telemetry["summary"]["provider"].items()
+                            if key.startswith("timing_")
+                        },
+                        "layer_total_ms": layer_total,
+                        "categorized_critical_path_ms": categorized,
                     }
-                )
+                    record["critical_path_closure_ratio"] = (
+                        categorized / layer_total if layer_total else 1.0
+                    )
+                result["records"].append(record)
                 write_json(output, result)
     finally:
         runtime.close()
@@ -165,6 +197,32 @@ def main(argv: list[str] | None = None) -> int:
             item["telemetry_records"] == 0
             for item in result["records"]
             if item["telemetry_level"] == "summary"
+        ),
+        "critical_path_closes_within_5_percent": (
+            0.95
+            <= result["summary"]["layer"]["median_critical_path_closure_ratio"]
+            <= 1.05
+        ),
+        "timing_categories_present": all(
+            {
+                "timing_cache_lookup_ms_total",
+                "timing_victim_selection_ms_total",
+                "timing_allocation_reuse_ms_total",
+                "timing_policy_maintenance_ms_total",
+                "timing_tensor_decode_view_ms_total",
+                "timing_pread_ms_total",
+            }
+            <= set(item["timing_breakdown"]["provider_ms"])
+            and {
+                "router",
+                "prepare",
+                "provider_get",
+                "expert_kernel",
+                "routing_accumulation",
+            }
+            <= set(item["timing_breakdown"]["runtime_ms"])
+            for item in result["records"]
+            if item["telemetry_level"] == "layer"
         ),
     }
     result["acceptance"]["all_pass"] = all(result["acceptance"].values())

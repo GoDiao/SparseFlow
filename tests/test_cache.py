@@ -44,6 +44,17 @@ class ExpertCacheTest(unittest.TestCase):
         ):
             self.assertEqual(cache.counters()["cache_entries"], 1)
 
+    def test_detailed_cache_timings_are_opt_in(self):
+        cache = ExpertCache(max_bytes=2, collect_timings=True)
+        cache.put_sized(0, 0, 2)
+        cache.lookup(0, 0)
+        cache.put_sized(0, 1, 2)
+        counters = cache.counters()
+
+        self.assertGreaterEqual(counters["timing_cache_lookup_ms_total"], 0.0)
+        self.assertGreaterEqual(counters["timing_victim_selection_ms_total"], 0.0)
+        self.assertGreaterEqual(counters["timing_policy_maintenance_ms_total"], 0.0)
+
     def test_eviction_listener_receives_exact_entry(self):
         evicted = []
         cache = ExpertCache(max_bytes=2)

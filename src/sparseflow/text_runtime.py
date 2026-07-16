@@ -104,6 +104,9 @@ class SparseFlowQwenExperts(_Module):
             top_k_weights,
             lambda expert_id: self.provider.get(self.layer, expert_id),
             prepare_routed=lambda expert_ids: self.provider.prepare(self.layer, expert_ids),
+            timing_callback=(
+                self.telemetry.add_timing if self.telemetry.level == "layer" else None
+            ),
         )
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         self.telemetry.record_layer(
@@ -161,6 +164,7 @@ class Qwen36TextRuntime:
         self.experts_implementation = experts_implementation
         self.load_mode = load_mode
         self.loader_report = loader_report
+        self._router_hook_handles = self._attach_router_timing_hooks()
 
     @classmethod
     def from_pretrained(
@@ -229,6 +233,7 @@ class Qwen36TextRuntime:
                         capacity_per_layer=cache_slots,
                         max_bytes=cache_bytes,
                         policy=policy,
+                        collect_timings=telemetry_level == "layer",
                     )
                     provider = StreamingExpertProvider(
                         root,
@@ -324,6 +329,7 @@ class Qwen36TextRuntime:
             capacity_per_layer=cache_slots,
             max_bytes=cache_bytes,
             policy=policy,
+            collect_timings=telemetry_level == "layer",
         )
         provider = StreamingExpertProvider(
             root,
@@ -383,6 +389,38 @@ class Qwen36TextRuntime:
             return str(experts.config._experts_implementation)
         except (AttributeError, IndexError):
             return "unknown"
+
+    def _attach_router_timing_hooks(self):
+        if self.provider is None or self.telemetry.level != "layer":
+            return []
+        language_model = self.model.model
+        layers = (
+            language_model.language_model.layers
+            if hasattr(language_model, "language_model")
+            else language_model.layers
+        )
+        starts: dict[int, float] = {}
+        handles = []
+        for layer_index, decoder_layer in enumerate(layers):
+            router = getattr(decoder_layer.mlp, "gate", None)
+            if router is None:
+                continue
+
+            def before(_module, _inputs, index=layer_index):
+                if self.telemetry.level == "layer":
+                    starts[index] = time.perf_counter()
+
+            def after(_module, _inputs, _output, index=layer_index):
+                started = starts.pop(index, None)
+                if started is not None:
+                    self.telemetry.add_timing(
+                        "router",
+                        (time.perf_counter() - started) * 1000.0,
+                    )
+
+            handles.append(router.register_forward_pre_hook(before))
+            handles.append(router.register_forward_hook(after))
+        return handles
 
     @property
     def device(self):
@@ -567,6 +605,9 @@ class Qwen36TextRuntime:
         self.telemetry.begin_forward(forward, phase, token_position)
 
     def close(self) -> None:
+        for handle in self._router_hook_handles:
+            handle.remove()
+        self._router_hook_handles.clear()
         if self.provider is not None:
             self.provider.close()
         if self.reader is not None:

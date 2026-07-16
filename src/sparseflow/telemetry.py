@@ -28,6 +28,20 @@ _COUNTER_KEYS = (
     "prefetch_late",
     "prefetch_hit_bytes",
     "prefetch_wasted_ready_bytes",
+    "timing_cache_lookup_ms_total",
+    "timing_victim_selection_ms_total",
+    "timing_allocation_reuse_ms_total",
+    "timing_policy_maintenance_ms_total",
+    "timing_tensor_decode_view_ms_total",
+    "timing_pread_ms_total",
+)
+
+_TIMING_CATEGORIES = (
+    "router",
+    "prepare",
+    "provider_get",
+    "expert_kernel",
+    "routing_accumulation",
 )
 
 
@@ -51,6 +65,7 @@ class RuntimeTelemetry:
     _forwards: list[dict[str, Any]] = field(default_factory=list)
     _current: dict[str, Any] | None = None
     _observer_seconds: float = 0.0
+    _pending_timings_ms: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.level not in {"none", "summary", "layer"}:
@@ -61,6 +76,7 @@ class RuntimeTelemetry:
         self._forwards.clear()
         self._current = None
         self._observer_seconds = 0.0
+        self._pending_timings_ms.clear()
 
     def begin_forward(
         self,
@@ -80,9 +96,22 @@ class RuntimeTelemetry:
             "unique_experts_sum": 0 if self.level == "layer" else None,
             "layer_total_ms": 0.0,
             "provider": _zero_provider(),
+            "timings_ms": {key: 0.0 for key in _TIMING_CATEGORIES},
             "cached_bytes_after": 0,
             "cache_entries_after": 0,
         }
+        self._pending_timings_ms = {key: 0.0 for key in _TIMING_CATEGORIES}
+
+    def add_timing(self, category: str, elapsed_ms: float) -> None:
+        if self.level != "layer":
+            return
+        if category not in self._pending_timings_ms:
+            self._pending_timings_ms[category] = 0.0
+            assert self._current is not None
+            self._current["timings_ms"][category] = 0.0
+        self._pending_timings_ms[category] += elapsed_ms
+        assert self._current is not None
+        self._current["timings_ms"][category] += elapsed_ms
 
     def record_layer(
         self,
@@ -123,10 +152,14 @@ class RuntimeTelemetry:
                     "unique_experts": unique_experts,
                     "layer_total_ms": elapsed_ms,
                     "provider": provider,
+                    "timings_ms": dict(self._pending_timings_ms),
                     "cached_bytes_after": current["cached_bytes_after"],
                     "cache_entries_after": current["cache_entries_after"],
                 }
             )
+            self._pending_timings_ms = {
+                key: 0.0 for key in self._pending_timings_ms
+            }
         self._observer_seconds += time.perf_counter() - observer_started
 
     def as_dict(self) -> dict[str, Any]:
@@ -152,6 +185,7 @@ class RuntimeTelemetry:
             ),
             "layer_total_ms": sum(item["layer_total_ms"] for item in self._forwards),
             "provider": _sum_provider(self._forwards),
+            "timings_ms": _sum_timings(self._forwards),
         }
         return {
             "level": self.level,
@@ -172,6 +206,14 @@ def _sum_provider(forwards: list[dict[str, Any]]) -> dict[str, int | float]:
     for item in forwards:
         for key, value in item["provider"].items():
             result[key] += value
+    return result
+
+
+def _sum_timings(forwards: list[dict[str, Any]]) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for item in forwards:
+        for key, value in item["timings_ms"].items():
+            result[key] = result.get(key, 0.0) + value
     return result
 
 
