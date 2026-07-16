@@ -30,6 +30,7 @@ from .moe_probe import compare_expert_paths, compare_moe_cache_paths, compare_mo
 from .moe_runtime import compare_multilayer_moe_paths
 from .text_runtime import (
     Qwen36TextRuntime,
+    compare_bf16_int8_quantization,
     compare_int8_reference_paths,
     compare_sparseflow_policy_paths,
     compare_sparseflow_runtime_paths,
@@ -355,6 +356,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     int8_check_p.add_argument("--output")
     int8_check_p.add_argument("--json", action="store_true")
+
+    int8_quality_p = sub.add_parser(
+        "int8-quality-check",
+        help="Compare BF16 and INT8 logits on one fixed teacher-forced token path.",
+    )
+    int8_quality_p.add_argument("model")
+    int8_quality_p.add_argument("--int8-container", required=True)
+    int8_quality_p.add_argument("--prompt", required=True)
+    int8_quality_p.add_argument("--max-new-tokens", type=int, default=32)
+    int8_quality_p.add_argument("--top-k", type=int, default=10)
+    int8_quality_p.add_argument("--output")
+    int8_quality_p.add_argument("--json", action="store_true")
 
     policy_check_p = sub.add_parser(
         "policy-check",
@@ -688,6 +701,21 @@ def main(argv: list[str] | None = None) -> int:
                 output.write_text(encoded + "\n", encoding="utf-8")
             print(encoded if args.json else _format_runtime_check(result))
             return 0 if result["all_invariants_pass"] else 1
+        if args.command == "int8-quality-check":
+            result = compare_bf16_int8_quantization(
+                args.model,
+                args.int8_container,
+                prompt=args.prompt,
+                max_new_tokens=args.max_new_tokens,
+                top_k=args.top_k,
+            )
+            encoded = json.dumps(result, indent=2, ensure_ascii=False)
+            if args.output:
+                output = Path(args.output).expanduser()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(encoded + "\n", encoding="utf-8")
+            print(encoded if args.json else _format_int8_quality(result))
+            return 0
         if args.command == "policy-check":
             variants = tuple(item.strip() for item in args.variants.split(",") if item.strip())
             result = compare_sparseflow_policy_paths(
@@ -994,6 +1022,22 @@ def _format_runtime_check(result: dict[str, Any]) -> str:
             f"streaming    generation I/O={format_bytes(streaming['generation_expert_io']['read_bytes'])}",
             f"correct      {result['correctness']}",
             f"invariants   {result['invariants']}",
+        ]
+    )
+
+
+def _format_int8_quality(result: dict[str, Any]) -> str:
+    summary = result["summary"]
+    return "\n".join(
+        [
+            "SparseFlow Stage 7.5.3 INT8 quality-check",
+            f"first divergence  {result['greedy']['first_divergence']}",
+            f"matching prefix   {result['greedy']['matching_prefix_tokens']}",
+            f"max logit error   {summary['max_abs_logit_error']:.6g}",
+            f"mean logit error  {summary['mean_abs_logit_error']:.6g}",
+            f"max KL            {summary['max_kl_bf16_to_int8']:.6g}",
+            f"mean top-k overlap {summary['mean_top_k_overlap']:.4f}",
+            f"argmax equal      {summary['argmax_equal_steps']}/{result['max_new_tokens']}",
         ]
     )
 

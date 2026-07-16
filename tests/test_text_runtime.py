@@ -174,6 +174,7 @@ class TextRuntimeTest(unittest.TestCase):
             max_new_tokens=3,
             stop_on_eos=True,
             record_logit_fingerprints=True,
+            capture_logits=True,
         )
 
         self.assertEqual(result["generated_ids"], [2, 3, 4])
@@ -182,6 +183,7 @@ class TextRuntimeTest(unittest.TestCase):
         self.assertGreaterEqual(result["prefill_seconds"], 0.0)
         self.assertEqual(len(result["decode_token_seconds"]), 2)
         self.assertEqual(len(result["logit_fingerprints"]), 3)
+        self.assertEqual(len(result["captured_logits"]), 3)
         self.assertEqual(
             [item["argmax"] for item in result["logit_fingerprints"]],
             [[2], [3], [4]],

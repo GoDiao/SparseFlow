@@ -525,6 +525,7 @@ class Qwen36TextRuntime:
         max_new_tokens: int = 8,
         stop_on_eos: bool = True,
         record_logit_fingerprints: bool = False,
+        capture_logits: bool = False,
     ) -> dict[str, Any]:
         if max_new_tokens < 1:
             raise ValueError("max_new_tokens must be positive")
@@ -549,6 +550,11 @@ class Qwen36TextRuntime:
         logit_fingerprints = (
             [_logit_fingerprint(first.logits[:, -1, :], self.torch)]
             if record_logit_fingerprints
+            else None
+        )
+        captured_logits = (
+            [first.logits[:, -1, :].detach().to(device="cpu", dtype=self.torch.float32).clone()]
+            if capture_logits
             else None
         )
         past = getattr(first, "past_key_values", None)
@@ -582,6 +588,13 @@ class Qwen36TextRuntime:
             if logit_fingerprints is not None:
                 logit_fingerprints.append(
                     _logit_fingerprint(output.logits[:, -1, :], self.torch)
+                )
+            if captured_logits is not None:
+                captured_logits.append(
+                    output.logits[:, -1, :]
+                    .detach()
+                    .to(device="cpu", dtype=self.torch.float32)
+                    .clone()
                 )
             past = getattr(output, "past_key_values", None)
             if self.route_audit is not None:
@@ -630,6 +643,7 @@ class Qwen36TextRuntime:
             "decode_token_seconds": decode_durations,
             "prefetch_finalize_seconds": prefetch_finalize_seconds,
             "logit_fingerprints": logit_fingerprints,
+            "captured_logits": captured_logits,
             "cache": self.cache.stats_dict() if self.cache is not None else None,
             "prefetch": self.provider.prefetch_stats() if self.provider is not None else None,
             "provider_storage": self.provider.storage_report() if self.provider is not None else None,
@@ -648,6 +662,52 @@ class Qwen36TextRuntime:
                 "process_peak_rss": peak_rss_bytes(),
             },
         }
+
+    def teacher_forced_logits(self, prompt: str, continuation_ids: list[int]):
+        """Return next-token logits while replaying one fixed continuation."""
+
+        if not continuation_ids:
+            raise ValueError("continuation_ids must not be empty")
+        inputs = self.encode_chat(prompt)
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs.get("attention_mask", self.torch.ones_like(input_ids))
+        self._begin_forward(0, "prefill", int(input_ids.shape[-1]) - 1)
+        first = self.prefill(inputs)
+        logits = [
+            first.logits[:, -1, :]
+            .detach()
+            .to(device="cpu", dtype=self.torch.float32)
+            .clone()
+        ]
+        past = first.past_key_values
+        previous = self.torch.tensor(
+            [[continuation_ids[0]]], dtype=self.torch.long, device=self.device
+        )
+        for forward_index in range(1, len(continuation_ids)):
+            attention_mask = self.torch.cat(
+                [attention_mask, self.torch.ones_like(previous)], dim=-1
+            )
+            self._begin_forward(
+                forward_index,
+                "decode",
+                int(input_ids.shape[-1]) + forward_index - 1,
+            )
+            output = self.decode(previous, attention_mask, past)
+            logits.append(
+                output.logits[:, -1, :]
+                .detach()
+                .to(device="cpu", dtype=self.torch.float32)
+                .clone()
+            )
+            past = output.past_key_values
+            previous = self.torch.tensor(
+                [[continuation_ids[forward_index]]],
+                dtype=self.torch.long,
+                device=self.device,
+            )
+        if self.provider is not None:
+            self.provider.finish_generation()
+        return logits
 
     def _begin_forward(
         self,
@@ -1030,6 +1090,145 @@ def compare_int8_reference_paths(
         "streaming_generation_reads_experts": streaming_reads["read_bytes"] > 0,
         "cache_budget_respected": provider["cached_bytes"] <= cache_bytes,
         "demand_accounting_exact": demand_accounted,
+    }
+
+
+def compare_bf16_int8_quantization(
+    model_dir: str | Path,
+    int8_container: str | Path,
+    prompt: str,
+    max_new_tokens: int = 32,
+    top_k: int = 10,
+) -> dict[str, Any]:
+    """Measure INT8 quantization loss on one fixed BF16 token path."""
+
+    import torch
+    import torch.nn.functional as functional
+
+    if max_new_tokens < 1 or top_k < 1:
+        raise ValueError("max_new_tokens and top_k must be positive")
+    root = Path(model_dir).expanduser().resolve()
+    container = Path(int8_container).expanduser().resolve()
+
+    load_started = time.perf_counter()
+    bf16_runtime = Qwen36TextRuntime.from_pretrained(
+        root,
+        mode="resident",
+        dtype="bf16",
+        load_mode="memory-native",
+        expert_storage="bf16",
+        telemetry_level="none",
+        experts_implementation="eager",
+    )
+    bf16_load_seconds = time.perf_counter() - load_started
+    try:
+        bf16 = bf16_runtime.greedy_generate(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            record_logit_fingerprints=True,
+            capture_logits=True,
+        )
+    finally:
+        bf16_runtime.close()
+    bf16_logits = bf16.pop("captured_logits")
+    gc.collect()
+
+    load_started = time.perf_counter()
+    int8_runtime = Qwen36TextRuntime.from_pretrained(
+        root,
+        mode="resident",
+        dtype="bf16",
+        load_mode="memory-native",
+        expert_storage="int8-reference",
+        int8_container=container,
+        telemetry_level="none",
+        experts_implementation="eager",
+    )
+    int8_load_seconds = time.perf_counter() - load_started
+    try:
+        int8_greedy = int8_runtime.greedy_generate(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            record_logit_fingerprints=True,
+        )
+        int8_logits = int8_runtime.teacher_forced_logits(prompt, bf16["generated_ids"])
+    finally:
+        int8_runtime.close()
+
+    steps = []
+    for index, (left, right) in enumerate(zip(bf16_logits, int8_logits)):
+        difference = (right - left).abs()
+        left_log_probs = functional.log_softmax(left, dim=-1)
+        right_log_probs = functional.log_softmax(right, dim=-1)
+        probabilities = left_log_probs.exp()
+        kl = (probabilities * (left_log_probs - right_log_probs)).sum(dim=-1)
+        left_top = set(int(value) for value in left.topk(top_k, dim=-1).indices[0])
+        right_top = set(int(value) for value in right.topk(top_k, dim=-1).indices[0])
+        steps.append(
+            {
+                "step": index,
+                "max_abs_logit_error": float(difference.max()),
+                "mean_abs_logit_error": float(difference.mean()),
+                "kl_bf16_to_int8": float(kl.item()),
+                "top_k": top_k,
+                "top_k_overlap": len(left_top & right_top) / top_k,
+                "bf16_argmax": int(left.argmax(dim=-1).item()),
+                "int8_argmax_on_bf16_path": int(right.argmax(dim=-1).item()),
+                "argmax_equal": bool(torch.equal(left.argmax(dim=-1), right.argmax(dim=-1))),
+            }
+        )
+    first_divergence = next(
+        (
+            index
+            for index, (left, right) in enumerate(
+                zip(bf16["generated_ids"], int8_greedy["generated_ids"])
+            )
+            if left != right
+        ),
+        None,
+    )
+    return {
+        "schema_version": 1,
+        "kind": "qwen3_5_stage7_5_int8_quantization_quality",
+        "stage": "7.5.3",
+        "agent": "Main Dev",
+        "model": str(root),
+        "int8_container": str(container),
+        "prompt": prompt,
+        "max_new_tokens": max_new_tokens,
+        "comparison_path": "INT8 teacher-forced on BF16 greedy continuation",
+        "bf16": {
+            "load_seconds": bf16_load_seconds,
+            "generated_ids": bf16["generated_ids"],
+            "text": bf16["text"],
+            "logit_fingerprints": bf16["logit_fingerprints"],
+        },
+        "int8": {
+            "load_seconds": int8_load_seconds,
+            "generated_ids": int8_greedy["generated_ids"],
+            "text": int8_greedy["text"],
+            "logit_fingerprints": int8_greedy["logit_fingerprints"],
+        },
+        "greedy": {
+            "first_divergence": first_divergence,
+            "matching_prefix_tokens": (
+                first_divergence if first_divergence is not None else max_new_tokens
+            ),
+        },
+        "teacher_forced_steps": steps,
+        "summary": {
+            "max_abs_logit_error": max(item["max_abs_logit_error"] for item in steps),
+            "mean_abs_logit_error": sum(
+                item["mean_abs_logit_error"] for item in steps
+            )
+            / len(steps),
+            "max_kl_bf16_to_int8": max(item["kl_bf16_to_int8"] for item in steps),
+            "mean_kl_bf16_to_int8": sum(item["kl_bf16_to_int8"] for item in steps)
+            / len(steps),
+            "mean_top_k_overlap": sum(item["top_k_overlap"] for item in steps)
+            / len(steps),
+            "argmax_equal_steps": sum(item["argmax_equal"] for item in steps),
+        },
     }
     return {
         "schema_version": 1,
