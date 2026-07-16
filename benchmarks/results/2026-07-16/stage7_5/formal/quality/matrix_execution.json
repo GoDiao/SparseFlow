@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_5_6_quality_matrix_execution",
+  "stage": "7.5.6",
+  "agent": "Main Dev",
+  "started_utc": "2026-07-16T17:39:31.978037+00:00",
+  "git": {
+    "commit": "1ef6df6a8b712fb9a02d3d61e03929ed5c06ea00",
+    "branch": "main",
+    "dirty": false
+  },
+  "model": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+  "int8_container": "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+  "manifest_dir": "/root/workspace/SparceFlow/benchmarks/manifests",
+  "threads": 10,
+  "choice_execution": "batch",
+  "cells": [
+    {
+      "level": "formal",
+      "backend": "int8-native",
+      "output": "/tmp/sparseflow_stage7_5_6_quality/formal-int8-native.json",
+      "command": [
+        "/usr/local/miniconda3/envs/py312/bin/python",
+        "-m",
+        "benchmarks.score_choices",
+        "--model",
+        "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+        "--data",
+        "/root/workspace/SparceFlow/benchmarks/manifests/quality_formal_v1.jsonl",
+        "--output",
+        "/tmp/sparseflow_stage7_5_6_quality/formal-int8-native.json",
+        "--backend",
+        "int8-native",
+        "--threads",
+        "10",
+        "--choice-execution",
+        "batch",
+        "--int8-container",
+        "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8"
+      ],
+      "seconds": 1857.6455849269987,
+      "returncode": 0,
+      "log_tail": "[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\nW0716 17:40:07.465000 144492 site-packages/torch/utils/cpp_extension.py:117] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'\nquestion=1/60 id=hellaswag:6857\nquestion=2/60 id=hellaswag:12205\nquestion=3/60 id=hellaswag:18357\nquestion=4/60 id=hellaswag:14447\nquestion=5/60 id=hellaswag:10691\nquestion=6/60 id=hellaswag:19411\nquestion=7/60 id=hellaswag:12365\nquestion=8/60 id=hellaswag:13088\nquestion=9/60 id=hellaswag:13428\nquestion=10/60 id=hellaswag:7891\nquestion=11/60 id=hellaswag:49250\nquestion=12/60 id=hellaswag:35602\nquestion=13/60 id=hellaswag:43317\nquestion=14/60 id=hellaswag:29410\nquestion=15/60 id=hellaswag:6926\nquestion=16/60 id=hellaswag:48370\nquestion=17/60 id=hellaswag:13561\nquestion=18/60 id=hellaswag:4250\nquestion=19/60 id=hellaswag:31373\nquestion=20/60 id=hellaswag:5002\nquestion=21/60 id=arc_challenge:Mercury_7215180\nquestion=22/60 id=arc_challenge:Mercury_7097318\nquestion=23/60 id=arc_challenge:LEAP_2004_8_10397\nquestion=24/60 id=arc_challenge:Mercury_7234483\nquestion=25/60 id=arc_challenge:Mercury_400905\nquestion=26/60 id=arc_challenge:Mercury_180058\nquestion=27/60 id=arc_challenge:Mercury_SC_400339\nquestion=28/60 id=arc_challenge:Mercury_184258\nquestion=29/60 id=arc_challenge:Mercury_176015\nquestion=30/60 id=arc_challenge:Mercury_SC_402101\nquestion=31/60 id=arc_challenge:Mercury_7124338\nquestion=32/60 id=arc_challenge:Mercury_SC_400655\nquestion=33/60 id=arc_challenge:Mercury_7074865\nquestion=34/60 id=arc_challenge:Mercury_7120890\nquestion=35/60 id=arc_challenge:Mercury_SC_400047\nquestion=36/60 id=arc_challenge:Mercury_7141698\nquestion=37/60 id=arc_challenge:Mercury_7115063\nquestion=38/60 id=arc_challenge:Mercury_SC_400050\nquestion=39/60 id=arc_challenge:Mercury_409529\nquestion=40/60 id=arc_challenge:Mercury_412683\nquestion=41/60 id=mmlu:philosophy:9946\nquestion=42/60 id=mmlu:machine_learning:6893\nquestion=43/60 id=mmlu:global_facts:2641\nquestion=44/60 id=mmlu:high_school_psychology:5162\nquestion=45/60 id=mmlu:conceptual_physics:1662\nquestion=46/60 id=mmlu:professional_law:11468\nquestion=47/60 id=mmlu:high_school_psychology:5367\nquestion=48/60 id=mmlu:high_school_biology:2713\nquestion=49/60 id=mmlu:high_school_macroeconomics:3996\nquestion=50/60 id=mmlu:abstract_algebra:47\nquestion=51/60 id=mmlu:high_school_statistics:5586\nquestion=52/60 id=mmlu:philosophy:9791\nquestion=53/60 id=mmlu:professional_law:10663\nquestion=54/60 id=mmlu:miscellaneous:8139\nquestion=55/60 id=mmlu:college_chemistry:915\nquestion=56/60 id=mmlu:high_school_european_history:3309\nquestion=57/60 id=mmlu:philosophy:9799\nquestion=58/60 id=mmlu:logical_fallacies:6778\nquestion=59/60 id=mmlu:elementary_mathematics:2141\nquestion=60/60 id=mmlu:moral_scenarios:8675\n{\"n\": 60, \"accuracy\": 0.55, \"acc_norm_char\": 0.6666666666666666, \"acc_norm_token\": 0.65, \"forward_seconds\": 1816.497375515999}\n",
+      "status": "complete"
+    },
+    {
+      "level": "formal",
+      "backend": "int8-native-streaming",
+      "output": "/tmp/sparseflow_stage7_5_6_quality/formal-int8-native-streaming.json",
+      "command": [
+        "/usr/local/miniconda3/envs/py312/bin/python",
+        "-m",
+        "benchmarks.score_choices",
+        "--model",
+        "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+        "--data",
+        "/root/workspace/SparceFlow/benchmarks/manifests/quality_formal_v1.jsonl",
+        "--output",
+        "/tmp/sparseflow_stage7_5_6_quality/formal-int8-native-streaming.json",
+        "--backend",
+        "int8-native-streaming",
+        "--threads",
+        "10",
+        "--choice-execution",
+        "batch",
+        "--int8-container",
+        "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+        "--cache-bytes",
+        "4GiB"
+      ],
+      "seconds": 2543.0146453359994,
+      "returncode": 0,
+      "log_tail": "[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d\nW0716 18:10:38.640000 156521 site-packages/torch/utils/cpp_extension.py:117] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda'\nquestion=1/60 id=hellaswag:6857\nquestion=2/60 id=hellaswag:12205\nquestion=3/60 id=hellaswag:18357\nquestion=4/60 id=hellaswag:14447\nquestion=5/60 id=hellaswag:10691\nquestion=6/60 id=hellaswag:19411\nquestion=7/60 id=hellaswag:12365\nquestion=8/60 id=hellaswag:13088\nquestion=9/60 id=hellaswag:13428\nquestion=10/60 id=hellaswag:7891\nquestion=11/60 id=hellaswag:49250\nquestion=12/60 id=hellaswag:35602\nquestion=13/60 id=hellaswag:43317\nquestion=14/60 id=hellaswag:29410\nquestion=15/60 id=hellaswag:6926\nquestion=16/60 id=hellaswag:48370\nquestion=17/60 id=hellaswag:13561\nquestion=18/60 id=hellaswag:4250\nquestion=19/60 id=hellaswag:31373\nquestion=20/60 id=hellaswag:5002\nquestion=21/60 id=arc_challenge:Mercury_7215180\nquestion=22/60 id=arc_challenge:Mercury_7097318\nquestion=23/60 id=arc_challenge:LEAP_2004_8_10397\nquestion=24/60 id=arc_challenge:Mercury_7234483\nquestion=25/60 id=arc_challenge:Mercury_400905\nquestion=26/60 id=arc_challenge:Mercury_180058\nquestion=27/60 id=arc_challenge:Mercury_SC_400339\nquestion=28/60 id=arc_challenge:Mercury_184258\nquestion=29/60 id=arc_challenge:Mercury_176015\nquestion=30/60 id=arc_challenge:Mercury_SC_402101\nquestion=31/60 id=arc_challenge:Mercury_7124338\nquestion=32/60 id=arc_challenge:Mercury_SC_400655\nquestion=33/60 id=arc_challenge:Mercury_7074865\nquestion=34/60 id=arc_challenge:Mercury_7120890\nquestion=35/60 id=arc_challenge:Mercury_SC_400047\nquestion=36/60 id=arc_challenge:Mercury_7141698\nquestion=37/60 id=arc_challenge:Mercury_7115063\nquestion=38/60 id=arc_challenge:Mercury_SC_400050\nquestion=39/60 id=arc_challenge:Mercury_409529\nquestion=40/60 id=arc_challenge:Mercury_412683\nquestion=41/60 id=mmlu:philosophy:9946\nquestion=42/60 id=mmlu:machine_learning:6893\nquestion=43/60 id=mmlu:global_facts:2641\nquestion=44/60 id=mmlu:high_school_psychology:5162\nquestion=45/60 id=mmlu:conceptual_physics:1662\nquestion=46/60 id=mmlu:professional_law:11468\nquestion=47/60 id=mmlu:high_school_psychology:5367\nquestion=48/60 id=mmlu:high_school_biology:2713\nquestion=49/60 id=mmlu:high_school_macroeconomics:3996\nquestion=50/60 id=mmlu:abstract_algebra:47\nquestion=51/60 id=mmlu:high_school_statistics:5586\nquestion=52/60 id=mmlu:philosophy:9791\nquestion=53/60 id=mmlu:professional_law:10663\nquestion=54/60 id=mmlu:miscellaneous:8139\nquestion=55/60 id=mmlu:college_chemistry:915\nquestion=56/60 id=mmlu:high_school_european_history:3309\nquestion=57/60 id=mmlu:philosophy:9799\nquestion=58/60 id=mmlu:logical_fallacies:6778\nquestion=59/60 id=mmlu:elementary_mathematics:2141\nquestion=60/60 id=mmlu:moral_scenarios:8675\n{\"n\": 60, \"accuracy\": 0.55, \"acc_norm_char\": 0.6666666666666666, \"acc_norm_token\": 0.65, \"forward_seconds\": 2529.971978534999}\n",
+      "status": "complete"
+    }
+  ],
+  "finished_utc": "2026-07-16T18:52:52.659997+00:00",
+  "all_complete": true
+}

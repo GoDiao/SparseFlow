@@ -314,6 +314,15 @@ accounting 和 failure gate 通过。当前主机默认选择 S1 LRU、prefetch 
 4 GiB 是开发默认，8 GiB 是高吞吐配置。结果见
 `docs/results/qwen36_stage7_5_5_int8_cache_prefetch_20260716.md`。[Main Dev]
 
+### Phase 7.5.6 status: formal benchmark complete
+
+冻结协议正式矩阵覆盖 BF16/W8A16/W8A8 resident 与 streaming、4/8 GiB、三次
+warm 和三次 final model-cold。W8A8 native 4/8 GiB 正式 decode 为
+`1.0981/1.4157 tok/s`，4 GiB current RSS 约 9.62 GiB；三次 cold median 为
+`0.8632 tok/s`。标准 HellaSwag/ARC-Challenge/MMLU Formal 共 60 题，native
+resident/streaming 的每个 choice/token log-likelihood exact。所有正式验收项
+通过。结果见 `docs/results/qwen36_stage7_5_6_formal_20260716.md`。[Main Dev]
+
 ## Early Non-goals
 
 - 阶段 6 暂不支持 vision 输入、MTP/speculative decoding 和生产级 serving。

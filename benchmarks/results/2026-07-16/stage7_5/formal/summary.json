@@ -1,0 +1,1104 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_5_6_formal_summary",
+  "stage": "7.5.6",
+  "agent": "Main Dev",
+  "created_utc": "2026-07-16T18:57:56.610404+00:00",
+  "performance": {
+    "rows": [
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/bf16-c3-r-0g-workload-warm.json",
+        "expert_storage": "bf16",
+        "variant": "C3-R",
+        "cache_state": "workload-warm",
+        "cache_bytes": null,
+        "samples": 3,
+        "median_load_seconds": 324.5774302530008,
+        "median_ttft_seconds": 4.665001698998822,
+        "median_decode_tokens_per_second": 3.4339216863014106,
+        "decode_latency_p50_seconds": 0.2891687240007741,
+        "decode_latency_p95_seconds": 0.31000992019908147,
+        "median_decode_physical_bytes_per_token": 0.0,
+        "cache_hit_rate": null,
+        "max_rss_after_generation": 70324920320,
+        "process_peak_rss_bytes": 71247900672,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/bf16-c3-s1-8g-workload-warm.json",
+        "expert_storage": "bf16",
+        "variant": "C3-S1",
+        "cache_state": "workload-warm",
+        "cache_bytes": 8589934592,
+        "samples": 3,
+        "median_load_seconds": 4.863666786000977,
+        "median_ttft_seconds": 20.860477943999285,
+        "median_decode_tokens_per_second": 1.0822397985296592,
+        "decode_latency_p50_seconds": 0.884331255001598,
+        "decode_latency_p95_seconds": 1.4303935462005026,
+        "median_decode_physical_bytes_per_token": 735694451.6129032,
+        "cache_hit_rate": 0.47731478054918214,
+        "max_rss_after_generation": 14576537600,
+        "process_peak_rss_bytes": 14608314368,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-r-0g-workload-warm.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-R",
+        "cache_state": "workload-warm",
+        "cache_bytes": null,
+        "samples": 3,
+        "median_load_seconds": 33.67388591499912,
+        "median_ttft_seconds": 8.250539851997019,
+        "median_decode_tokens_per_second": 2.4924752533894785,
+        "decode_latency_p50_seconds": 0.3995777710006223,
+        "decode_latency_p95_seconds": 0.4342928456011577,
+        "median_decode_physical_bytes_per_token": 0.0,
+        "cache_hit_rate": null,
+        "max_rss_after_generation": 38422994944,
+        "process_peak_rss_bytes": 39162208256,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-s1-4g-model-cold-r0.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-S1",
+        "cache_state": "model-cold",
+        "cache_bytes": 4294967296,
+        "samples": 1,
+        "median_load_seconds": 5.668361473999539,
+        "median_ttft_seconds": 55.51438652399884,
+        "median_decode_tokens_per_second": 0.869162910624605,
+        "decode_latency_p50_seconds": 1.0737469010018685,
+        "decode_latency_p95_seconds": 1.535695250498975,
+        "median_decode_physical_bytes_per_token": 372225915.87096775,
+        "cache_hit_rate": 0.4632178804026051,
+        "max_rss_after_generation": 10295754752,
+        "process_peak_rss_bytes": 10325073920,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-s1-4g-model-cold-r1.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-S1",
+        "cache_state": "model-cold",
+        "cache_bytes": 4294967296,
+        "samples": 1,
+        "median_load_seconds": 25.610020927000733,
+        "median_ttft_seconds": 55.786746767000295,
+        "median_decode_tokens_per_second": 0.8512319230516959,
+        "decode_latency_p50_seconds": 1.0684384790001786,
+        "decode_latency_p95_seconds": 1.614292670497889,
+        "median_decode_physical_bytes_per_token": 372225915.87096775,
+        "cache_hit_rate": 0.4632178804026051,
+        "max_rss_after_generation": 10280730624,
+        "process_peak_rss_bytes": 10305253376,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-s1-4g-model-cold-r2.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-S1",
+        "cache_state": "model-cold",
+        "cache_bytes": 4294967296,
+        "samples": 1,
+        "median_load_seconds": 25.586934289000055,
+        "median_ttft_seconds": 55.87348746000134,
+        "median_decode_tokens_per_second": 0.8631865986896006,
+        "decode_latency_p50_seconds": 1.0658056799984479,
+        "decode_latency_p95_seconds": 1.568288054999357,
+        "median_decode_physical_bytes_per_token": 372225915.87096775,
+        "cache_hit_rate": 0.4632178804026051,
+        "max_rss_after_generation": 10285764608,
+        "process_peak_rss_bytes": 10314973184,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-s1-4g-workload-warm.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-S1",
+        "cache_state": "workload-warm",
+        "cache_bytes": 4294967296,
+        "samples": 3,
+        "median_load_seconds": 5.84113252500174,
+        "median_ttft_seconds": 20.210581683000783,
+        "median_decode_tokens_per_second": 1.0981435271302264,
+        "decode_latency_p50_seconds": 0.8519687280022481,
+        "decode_latency_p95_seconds": 1.34695546320072,
+        "median_decode_physical_bytes_per_token": 372225915.87096775,
+        "cache_hit_rate": 0.4765393724097099,
+        "max_rss_after_generation": 10334494720,
+        "process_peak_rss_bytes": 10366275584,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-s1-8g-workload-warm.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-S1",
+        "cache_state": "workload-warm",
+        "cache_bytes": 8589934592,
+        "samples": 3,
+        "median_load_seconds": 5.901624091002304,
+        "median_ttft_seconds": 18.005771951000497,
+        "median_decode_tokens_per_second": 1.41571867968223,
+        "decode_latency_p50_seconds": 0.6687366730002395,
+        "decode_latency_p95_seconds": 0.9028546029992867,
+        "median_decode_physical_bytes_per_token": 201516461.41935483,
+        "cache_hit_rate": 0.6511249259917111,
+        "max_rss_after_generation": 14727860224,
+        "process_peak_rss_bytes": 14756114432,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-reference-c3-r-0g-workload-warm.json",
+        "expert_storage": "int8-reference",
+        "variant": "C3-R",
+        "cache_state": "workload-warm",
+        "cache_bytes": null,
+        "samples": 3,
+        "median_load_seconds": 96.4488391140003,
+        "median_ttft_seconds": 7.742516665999574,
+        "median_decode_tokens_per_second": 1.7222473306738808,
+        "decode_latency_p50_seconds": 0.5750606219990004,
+        "decode_latency_p95_seconds": 0.6716864386013184,
+        "median_decode_physical_bytes_per_token": 0.0,
+        "cache_hit_rate": null,
+        "max_rss_after_generation": 38813900800,
+        "process_peak_rss_bytes": 39161229312,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-reference-c3-s1-4g-workload-warm.json",
+        "expert_storage": "int8-reference",
+        "variant": "C3-S1",
+        "cache_state": "workload-warm",
+        "cache_bytes": 4294967296,
+        "samples": 3,
+        "median_load_seconds": 5.914461618998757,
+        "median_ttft_seconds": 19.8763746730001,
+        "median_decode_tokens_per_second": 0.9231585357254191,
+        "decode_latency_p50_seconds": 1.061699994999799,
+        "decode_latency_p95_seconds": 1.565790944398759,
+        "median_decode_physical_bytes_per_token": 370802489.8064516,
+        "cache_hit_rate": 0.47579212318626,
+        "max_rss_after_generation": 10816151552,
+        "process_peak_rss_bytes": 10825609216,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      }
+    ],
+    "warm": [
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/bf16-c3-r-0g-workload-warm.json",
+        "expert_storage": "bf16",
+        "variant": "C3-R",
+        "cache_state": "workload-warm",
+        "cache_bytes": null,
+        "samples": 3,
+        "median_load_seconds": 324.5774302530008,
+        "median_ttft_seconds": 4.665001698998822,
+        "median_decode_tokens_per_second": 3.4339216863014106,
+        "decode_latency_p50_seconds": 0.2891687240007741,
+        "decode_latency_p95_seconds": 0.31000992019908147,
+        "median_decode_physical_bytes_per_token": 0.0,
+        "cache_hit_rate": null,
+        "max_rss_after_generation": 70324920320,
+        "process_peak_rss_bytes": 71247900672,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/bf16-c3-s1-8g-workload-warm.json",
+        "expert_storage": "bf16",
+        "variant": "C3-S1",
+        "cache_state": "workload-warm",
+        "cache_bytes": 8589934592,
+        "samples": 3,
+        "median_load_seconds": 4.863666786000977,
+        "median_ttft_seconds": 20.860477943999285,
+        "median_decode_tokens_per_second": 1.0822397985296592,
+        "decode_latency_p50_seconds": 0.884331255001598,
+        "decode_latency_p95_seconds": 1.4303935462005026,
+        "median_decode_physical_bytes_per_token": 735694451.6129032,
+        "cache_hit_rate": 0.47731478054918214,
+        "max_rss_after_generation": 14576537600,
+        "process_peak_rss_bytes": 14608314368,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-r-0g-workload-warm.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-R",
+        "cache_state": "workload-warm",
+        "cache_bytes": null,
+        "samples": 3,
+        "median_load_seconds": 33.67388591499912,
+        "median_ttft_seconds": 8.250539851997019,
+        "median_decode_tokens_per_second": 2.4924752533894785,
+        "decode_latency_p50_seconds": 0.3995777710006223,
+        "decode_latency_p95_seconds": 0.4342928456011577,
+        "median_decode_physical_bytes_per_token": 0.0,
+        "cache_hit_rate": null,
+        "max_rss_after_generation": 38422994944,
+        "process_peak_rss_bytes": 39162208256,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-s1-4g-workload-warm.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-S1",
+        "cache_state": "workload-warm",
+        "cache_bytes": 4294967296,
+        "samples": 3,
+        "median_load_seconds": 5.84113252500174,
+        "median_ttft_seconds": 20.210581683000783,
+        "median_decode_tokens_per_second": 1.0981435271302264,
+        "decode_latency_p50_seconds": 0.8519687280022481,
+        "decode_latency_p95_seconds": 1.34695546320072,
+        "median_decode_physical_bytes_per_token": 372225915.87096775,
+        "cache_hit_rate": 0.4765393724097099,
+        "max_rss_after_generation": 10334494720,
+        "process_peak_rss_bytes": 10366275584,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-native-c3-s1-8g-workload-warm.json",
+        "expert_storage": "int8-native",
+        "variant": "C3-S1",
+        "cache_state": "workload-warm",
+        "cache_bytes": 8589934592,
+        "samples": 3,
+        "median_load_seconds": 5.901624091002304,
+        "median_ttft_seconds": 18.005771951000497,
+        "median_decode_tokens_per_second": 1.41571867968223,
+        "decode_latency_p50_seconds": 0.6687366730002395,
+        "decode_latency_p95_seconds": 0.9028546029992867,
+        "median_decode_physical_bytes_per_token": 201516461.41935483,
+        "cache_hit_rate": 0.6511249259917111,
+        "max_rss_after_generation": 14727860224,
+        "process_peak_rss_bytes": 14756114432,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-reference-c3-r-0g-workload-warm.json",
+        "expert_storage": "int8-reference",
+        "variant": "C3-R",
+        "cache_state": "workload-warm",
+        "cache_bytes": null,
+        "samples": 3,
+        "median_load_seconds": 96.4488391140003,
+        "median_ttft_seconds": 7.742516665999574,
+        "median_decode_tokens_per_second": 1.7222473306738808,
+        "decode_latency_p50_seconds": 0.5750606219990004,
+        "decode_latency_p95_seconds": 0.6716864386013184,
+        "median_decode_physical_bytes_per_token": 0.0,
+        "cache_hit_rate": null,
+        "max_rss_after_generation": 38813900800,
+        "process_peak_rss_bytes": 39161229312,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      },
+      {
+        "source": "/root/workspace/SparceFlow/benchmarks/results/2026-07-16/stage7_5/formal/performance/i8-reference-c3-s1-4g-workload-warm.json",
+        "expert_storage": "int8-reference",
+        "variant": "C3-S1",
+        "cache_state": "workload-warm",
+        "cache_bytes": 4294967296,
+        "samples": 3,
+        "median_load_seconds": 5.914461618998757,
+        "median_ttft_seconds": 19.8763746730001,
+        "median_decode_tokens_per_second": 0.9231585357254191,
+        "decode_latency_p50_seconds": 1.061699994999799,
+        "decode_latency_p95_seconds": 1.565790944398759,
+        "median_decode_physical_bytes_per_token": 370802489.8064516,
+        "cache_hit_rate": 0.47579212318626,
+        "max_rss_after_generation": 10816151552,
+        "process_peak_rss_bytes": 10825609216,
+        "generated_ids_exact_across_runs": true,
+        "git": {
+          "commit": "2c7e240f7580e91019b2d8489ff3cf55629df0eb",
+          "branch": "main",
+          "dirty": false
+        }
+      }
+    ],
+    "native_4g_model_cold": {
+      "samples": 3,
+      "median_ttft_seconds": 55.786746767000295,
+      "median_decode_tokens_per_second": 0.8631865986896006,
+      "median_decode_physical_bytes_per_token": 372225915.87096775,
+      "max_rss_after_generation": 10295754752,
+      "raw_decode_tokens_per_second": [
+        0.869162910624605,
+        0.8512319230516959,
+        0.8631865986896006
+      ]
+    },
+    "generic_offload_stage7_4": {
+      "C1": {
+        "output_tokens": 32,
+        "samples": 3,
+        "load_seconds": 97.67357410400291,
+        "median_ttft_seconds": 4.130286221999995,
+        "median_decode_tokens_per_second": 2.959473622919245,
+        "peak_rss_bytes": 72019947520,
+        "first_token_divergence_vs_c3r": 23,
+        "comparison_boundary": "Transformers grouped-mm versus SparseFlow eager kernel; system-level only."
+      },
+      "C2-cold": {
+        "output_tokens": 2,
+        "samples": 3,
+        "median_ttft_seconds": 308.81829482399917,
+        "median_decode_tokens_per_second": 0.025669721765064234,
+        "peak_rss_bytes": 6399877120,
+        "median_process_read_bytes": 69321650176,
+        "min_process_read_bytes": 69321650176,
+        "max_process_read_bytes": 137903562752,
+        "raw_decode_tokens_per_second": [
+          0.0032190040181483883,
+          0.028002327870141612,
+          0.025669721765064234
+        ]
+      },
+      "C2-warm": {
+        "output_tokens": 2,
+        "samples": 3,
+        "median_ttft_seconds": 38.597121088001586,
+        "median_decode_tokens_per_second": 0.027944271181500134,
+        "peak_rss_bytes": 6254043136,
+        "median_process_read_bytes": 0
+      }
+    }
+  },
+  "quality": {
+    "levels": {
+      "smoke": {
+        "bf16": {
+          "aggregate": {
+            "n": 3,
+            "accuracy": 0.6666666666666666,
+            "accuracy_wilson95": [
+              0.2076596008020477,
+              0.9385080552796037
+            ],
+            "acc_norm_char": 0.6666666666666666,
+            "acc_norm_char_wilson95": [
+              0.2076596008020477,
+              0.9385080552796037
+            ],
+            "acc_norm_token": 0.6666666666666666,
+            "acc_norm_token_wilson95": [
+              0.2076596008020477,
+              0.9385080552796037
+            ]
+          },
+          "tasks": {
+            "hellaswag": {
+              "n": 1,
+              "accuracy": 1.0,
+              "accuracy_wilson95": [
+                0.20654931437723745,
+                1.0
+              ],
+              "acc_norm_char": 1.0,
+              "acc_norm_char_wilson95": [
+                0.20654931437723745,
+                1.0
+              ],
+              "acc_norm_token": 1.0,
+              "acc_norm_token_wilson95": [
+                0.20654931437723745,
+                1.0
+              ]
+            },
+            "arc_challenge": {
+              "n": 1,
+              "accuracy": 1.0,
+              "accuracy_wilson95": [
+                0.20654931437723745,
+                1.0
+              ],
+              "acc_norm_char": 1.0,
+              "acc_norm_char_wilson95": [
+                0.20654931437723745,
+                1.0
+              ],
+              "acc_norm_token": 1.0,
+              "acc_norm_token_wilson95": [
+                0.20654931437723745,
+                1.0
+              ]
+            },
+            "mmlu": {
+              "n": 1,
+              "accuracy": 0.0,
+              "accuracy_wilson95": [
+                0.0,
+                0.7934506856227626
+              ],
+              "acc_norm_char": 0.0,
+              "acc_norm_char_wilson95": [
+                0.0,
+                0.7934506856227626
+              ],
+              "acc_norm_token": 0.0,
+              "acc_norm_token_wilson95": [
+                0.0,
+                0.7934506856227626
+              ]
+            }
+          }
+        },
+        "int8_native": {
+          "aggregate": {
+            "n": 3,
+            "accuracy": 0.6666666666666666,
+            "accuracy_wilson95": [
+              0.2076596008020477,
+              0.9385080552796037
+            ],
+            "acc_norm_char": 0.6666666666666666,
+            "acc_norm_char_wilson95": [
+              0.2076596008020477,
+              0.9385080552796037
+            ],
+            "acc_norm_token": 0.6666666666666666,
+            "acc_norm_token_wilson95": [
+              0.2076596008020477,
+              0.9385080552796037
+            ]
+          },
+          "tasks": {
+            "hellaswag": {
+              "n": 1,
+              "accuracy": 1.0,
+              "accuracy_wilson95": [
+                0.20654931437723745,
+                1.0
+              ],
+              "acc_norm_char": 1.0,
+              "acc_norm_char_wilson95": [
+                0.20654931437723745,
+                1.0
+              ],
+              "acc_norm_token": 1.0,
+              "acc_norm_token_wilson95": [
+                0.20654931437723745,
+                1.0
+              ]
+            },
+            "arc_challenge": {
+              "n": 1,
+              "accuracy": 1.0,
+              "accuracy_wilson95": [
+                0.20654931437723745,
+                1.0
+              ],
+              "acc_norm_char": 1.0,
+              "acc_norm_char_wilson95": [
+                0.20654931437723745,
+                1.0
+              ],
+              "acc_norm_token": 1.0,
+              "acc_norm_token_wilson95": [
+                0.20654931437723745,
+                1.0
+              ]
+            },
+            "mmlu": {
+              "n": 1,
+              "accuracy": 0.0,
+              "accuracy_wilson95": [
+                0.0,
+                0.7934506856227626
+              ],
+              "acc_norm_char": 0.0,
+              "acc_norm_char_wilson95": [
+                0.0,
+                0.7934506856227626
+              ],
+              "acc_norm_token": 0.0,
+              "acc_norm_token_wilson95": [
+                0.0,
+                0.7934506856227626
+              ]
+            }
+          }
+        }
+      },
+      "pilot": {
+        "bf16": {
+          "aggregate": {
+            "n": 9,
+            "accuracy": 0.3333333333333333,
+            "accuracy_wilson95": [
+              0.1205838183869109,
+              0.6457978644196036
+            ],
+            "acc_norm_char": 0.5555555555555556,
+            "acc_norm_char_wilson95": [
+              0.26665129349549305,
+              0.8112214789023355
+            ],
+            "acc_norm_token": 0.3333333333333333,
+            "acc_norm_token_wilson95": [
+              0.1205838183869109,
+              0.6457978644196036
+            ]
+          },
+          "tasks": {
+            "hellaswag": {
+              "n": 3,
+              "accuracy": 0.3333333333333333,
+              "accuracy_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_char": 0.3333333333333333,
+              "acc_norm_char_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_token": 0.3333333333333333,
+              "acc_norm_token_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ]
+            },
+            "arc_challenge": {
+              "n": 3,
+              "accuracy": 0.3333333333333333,
+              "accuracy_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_char": 1.0,
+              "acc_norm_char_wilson95": [
+                0.4385029682449546,
+                1.0
+              ],
+              "acc_norm_token": 0.3333333333333333,
+              "acc_norm_token_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ]
+            },
+            "mmlu": {
+              "n": 3,
+              "accuracy": 0.3333333333333333,
+              "accuracy_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_char": 0.3333333333333333,
+              "acc_norm_char_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_token": 0.3333333333333333,
+              "acc_norm_token_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ]
+            }
+          }
+        },
+        "int8_native": {
+          "aggregate": {
+            "n": 9,
+            "accuracy": 0.3333333333333333,
+            "accuracy_wilson95": [
+              0.1205838183869109,
+              0.6457978644196036
+            ],
+            "acc_norm_char": 0.5555555555555556,
+            "acc_norm_char_wilson95": [
+              0.26665129349549305,
+              0.8112214789023355
+            ],
+            "acc_norm_token": 0.3333333333333333,
+            "acc_norm_token_wilson95": [
+              0.1205838183869109,
+              0.6457978644196036
+            ]
+          },
+          "tasks": {
+            "hellaswag": {
+              "n": 3,
+              "accuracy": 0.3333333333333333,
+              "accuracy_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_char": 0.3333333333333333,
+              "acc_norm_char_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_token": 0.3333333333333333,
+              "acc_norm_token_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ]
+            },
+            "arc_challenge": {
+              "n": 3,
+              "accuracy": 0.3333333333333333,
+              "accuracy_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_char": 1.0,
+              "acc_norm_char_wilson95": [
+                0.4385029682449546,
+                1.0
+              ],
+              "acc_norm_token": 0.3333333333333333,
+              "acc_norm_token_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ]
+            },
+            "mmlu": {
+              "n": 3,
+              "accuracy": 0.3333333333333333,
+              "accuracy_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_char": 0.3333333333333333,
+              "acc_norm_char_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ],
+              "acc_norm_token": 0.3333333333333333,
+              "acc_norm_token_wilson95": [
+                0.06149194472039621,
+                0.7923403991979522
+              ]
+            }
+          }
+        }
+      },
+      "development": {
+        "bf16": {
+          "aggregate": {
+            "n": 15,
+            "accuracy": 0.3333333333333333,
+            "accuracy_wilson95": [
+              0.1517632443971473,
+              0.5828645226148023
+            ],
+            "acc_norm_char": 0.6,
+            "acc_norm_char_wilson95": [
+              0.357468301206246,
+              0.8017550385865841
+            ],
+            "acc_norm_token": 0.5333333333333333,
+            "acc_norm_token_wilson95": [
+              0.30116980025498397,
+              0.7519046463426261
+            ]
+          },
+          "tasks": {
+            "hellaswag": {
+              "n": 5,
+              "accuracy": 0.2,
+              "accuracy_wilson95": [
+                0.03622410863243014,
+                0.6244653702374747
+              ],
+              "acc_norm_char": 0.2,
+              "acc_norm_char_wilson95": [
+                0.03622410863243014,
+                0.6244653702374747
+              ],
+              "acc_norm_token": 0.4,
+              "acc_norm_token_wilson95": [
+                0.11762077423264783,
+                0.769275718723987
+              ]
+            },
+            "arc_challenge": {
+              "n": 5,
+              "accuracy": 0.4,
+              "accuracy_wilson95": [
+                0.11762077423264783,
+                0.769275718723987
+              ],
+              "acc_norm_char": 1.0,
+              "acc_norm_char_wilson95": [
+                0.5655175352168251,
+                1.0
+              ],
+              "acc_norm_token": 0.6,
+              "acc_norm_token_wilson95": [
+                0.2307242812760128,
+                0.882379225767352
+              ]
+            },
+            "mmlu": {
+              "n": 5,
+              "accuracy": 0.4,
+              "accuracy_wilson95": [
+                0.11762077423264783,
+                0.769275718723987
+              ],
+              "acc_norm_char": 0.6,
+              "acc_norm_char_wilson95": [
+                0.2307242812760128,
+                0.882379225767352
+              ],
+              "acc_norm_token": 0.6,
+              "acc_norm_token_wilson95": [
+                0.2307242812760128,
+                0.882379225767352
+              ]
+            }
+          }
+        },
+        "int8_native": {
+          "aggregate": {
+            "n": 15,
+            "accuracy": 0.3333333333333333,
+            "accuracy_wilson95": [
+              0.1517632443971473,
+              0.5828645226148023
+            ],
+            "acc_norm_char": 0.6,
+            "acc_norm_char_wilson95": [
+              0.357468301206246,
+              0.8017550385865841
+            ],
+            "acc_norm_token": 0.5333333333333333,
+            "acc_norm_token_wilson95": [
+              0.30116980025498397,
+              0.7519046463426261
+            ]
+          },
+          "tasks": {
+            "hellaswag": {
+              "n": 5,
+              "accuracy": 0.2,
+              "accuracy_wilson95": [
+                0.03622410863243014,
+                0.6244653702374747
+              ],
+              "acc_norm_char": 0.2,
+              "acc_norm_char_wilson95": [
+                0.03622410863243014,
+                0.6244653702374747
+              ],
+              "acc_norm_token": 0.4,
+              "acc_norm_token_wilson95": [
+                0.11762077423264783,
+                0.769275718723987
+              ]
+            },
+            "arc_challenge": {
+              "n": 5,
+              "accuracy": 0.4,
+              "accuracy_wilson95": [
+                0.11762077423264783,
+                0.769275718723987
+              ],
+              "acc_norm_char": 1.0,
+              "acc_norm_char_wilson95": [
+                0.5655175352168251,
+                1.0
+              ],
+              "acc_norm_token": 0.6,
+              "acc_norm_token_wilson95": [
+                0.2307242812760128,
+                0.882379225767352
+              ]
+            },
+            "mmlu": {
+              "n": 5,
+              "accuracy": 0.4,
+              "accuracy_wilson95": [
+                0.11762077423264783,
+                0.769275718723987
+              ],
+              "acc_norm_char": 0.6,
+              "acc_norm_char_wilson95": [
+                0.2307242812760128,
+                0.882379225767352
+              ],
+              "acc_norm_token": 0.6,
+              "acc_norm_token_wilson95": [
+                0.2307242812760128,
+                0.882379225767352
+              ]
+            }
+          }
+        }
+      },
+      "formal": {
+        "bf16": {
+          "aggregate": {
+            "n": 60,
+            "accuracy": 0.5333333333333333,
+            "accuracy_wilson95": [
+              0.4089342702715789,
+              0.6537209395856151
+            ],
+            "acc_norm_char": 0.6666666666666666,
+            "acc_norm_char_wilson95": [
+              0.5405686645211968,
+              0.7727073847647731
+            ],
+            "acc_norm_token": 0.6333333333333333,
+            "acc_norm_token_wilson95": [
+              0.5068300063010303,
+              0.7437908331277456
+            ]
+          },
+          "tasks": {
+            "hellaswag": {
+              "n": 20,
+              "accuracy": 0.55,
+              "accuracy_wilson95": [
+                0.34208534245034233,
+                0.7418021417443759
+              ],
+              "acc_norm_char": 0.75,
+              "acc_norm_char_wilson95": [
+                0.531299122381256,
+                0.8881382985923343
+              ],
+              "acc_norm_token": 0.7,
+              "acc_norm_token_wilson95": [
+                0.4810271816464765,
+                0.8545227551323956
+              ]
+            },
+            "arc_challenge": {
+              "n": 20,
+              "accuracy": 0.6,
+              "accuracy_wilson95": [
+                0.3865815007622531,
+                0.781193467627183
+              ],
+              "acc_norm_char": 0.65,
+              "acc_norm_char_wilson95": [
+                0.43285427668523624,
+                0.818808175898918
+              ],
+              "acc_norm_token": 0.6,
+              "acc_norm_token_wilson95": [
+                0.3865815007622531,
+                0.781193467627183
+              ]
+            },
+            "mmlu": {
+              "n": 20,
+              "accuracy": 0.45,
+              "accuracy_wilson95": [
+                0.2581978582556243,
+                0.6579146575496577
+              ],
+              "acc_norm_char": 0.6,
+              "acc_norm_char_wilson95": [
+                0.3865815007622531,
+                0.781193467627183
+              ],
+              "acc_norm_token": 0.6,
+              "acc_norm_token_wilson95": [
+                0.3865815007622531,
+                0.781193467627183
+              ]
+            }
+          }
+        },
+        "int8_native": {
+          "aggregate": {
+            "n": 60,
+            "accuracy": 0.55,
+            "accuracy_wilson95": [
+              0.4249193588533434,
+              0.6690634559324476
+            ],
+            "acc_norm_char": 0.6666666666666666,
+            "acc_norm_char_wilson95": [
+              0.5405686645211968,
+              0.7727073847647731
+            ],
+            "acc_norm_token": 0.65,
+            "acc_norm_token_wilson95": [
+              0.5236261884175486,
+              0.7583222559398244
+            ]
+          },
+          "tasks": {
+            "hellaswag": {
+              "n": 20,
+              "accuracy": 0.55,
+              "accuracy_wilson95": [
+                0.34208534245034233,
+                0.7418021417443759
+              ],
+              "acc_norm_char": 0.75,
+              "acc_norm_char_wilson95": [
+                0.531299122381256,
+                0.8881382985923343
+              ],
+              "acc_norm_token": 0.7,
+              "acc_norm_token_wilson95": [
+                0.4810271816464765,
+                0.8545227551323956
+              ]
+            },
+            "arc_challenge": {
+              "n": 20,
+              "accuracy": 0.6,
+              "accuracy_wilson95": [
+                0.3865815007622531,
+                0.781193467627183
+              ],
+              "acc_norm_char": 0.65,
+              "acc_norm_char_wilson95": [
+                0.43285427668523624,
+                0.818808175898918
+              ],
+              "acc_norm_token": 0.65,
+              "acc_norm_token_wilson95": [
+                0.43285427668523624,
+                0.818808175898918
+              ]
+            },
+            "mmlu": {
+              "n": 20,
+              "accuracy": 0.5,
+              "accuracy_wilson95": [
+                0.2992980081982123,
+                0.7007019918017877
+              ],
+              "acc_norm_char": 0.6,
+              "acc_norm_char_wilson95": [
+                0.3865815007622531,
+                0.781193467627183
+              ],
+              "acc_norm_token": 0.6,
+              "acc_norm_token_wilson95": [
+                0.3865815007622531,
+                0.781193467627183
+              ]
+            }
+          }
+        }
+      }
+    },
+    "native_resident_streaming": {
+      "question_ids_equal": true,
+      "predictions_equal": true,
+      "token_loglikelihoods_equal": true,
+      "max_choice_loglikelihood_delta": 0.0,
+      "all_exact": true
+    },
+    "bf16_native_agreement": {
+      "questions": 60,
+      "prediction_equal": 59,
+      "prediction_norm_char_equal": 60,
+      "prediction_norm_token_equal": 59
+    },
+    "streaming_expert_read_bytes": 823943467008,
+    "int8_reference_formal": {
+      "status": "not-run",
+      "reason": "W8A16 reference dequantization dominated the first formal question; reference numerical attribution is covered by the 32-token teacher-forced quality gate, standard smoke, and formal performance matrix."
+    }
+  },
+  "validation": {
+    "performance_matrix_complete": true,
+    "performance_git_clean": true,
+    "storage_exact_by_precision": {
+      "bf16": true,
+      "int8-reference": true,
+      "int8-native": true
+    },
+    "native_cold_has_three_replicates": true,
+    "formal_quality_has_60_rows": true,
+    "native_quality_storage_exact": true,
+    "standard_int8_reference_smoke_present": true,
+    "generic_offload_baseline_present": true,
+    "all_pass": true
+  }
+}

@@ -351,6 +351,33 @@ Colibri 报告的 n=40、三项 mean acc_norm=62.5% 只是一条初步数据。Q
 
 本轮质量评测采用上述分层规模，由 Benchmark 负责冻结 manifest、执行评分并保存原始结果。[Benchmark]
 
+### 9.5 Stage 7.5 冻结质量协议
+
+Stage 7.5.6 已冻结以下嵌套 manifest：[Main Dev]
+
+```text
+quality_smoke_v1.jsonl        3 rows   sha256 906a574d...
+quality_pilot_v1.jsonl        9 rows   sha256 e62f3670...
+quality_development_v1.jsonl 15 rows   sha256 de7fbe24...
+quality_formal_v1.jsonl      60 rows   sha256 2beca7b5...
+```
+
+来源 revision、抽样 row、完整 hash 位于
+`benchmarks/manifests/quality_manifest_v1.meta.json`。每项任务使用独立
+`random.Random(f"1234:{task}")` 无放回抽样，较小阶段严格是 Formal 的
+per-task 前缀。[Main Dev]
+
+正式 scoring 使用 `choice_execution=batch`：同一问题的所有 choice 在一个
+padded batch forward 中执行，以共享 batch-union expert I/O。Sequential 与
+batch 的标准 Smoke 保持预测一致，但不得混用两者的原始 log-likelihood。
+Pilot/Development 指标从同一 Formal raw result 的冻结前缀派生，不重复执行
+相同题目。[Main Dev]
+
+W8A16 reference 的标准 Smoke 保留；Formal task scoring 未继续，因为 Python
+reference dequantization 成为 dominant observer。其数值归因使用独立的
+teacher-forced quality gate，性能归因使用完整 Stage 7.5.6 matrix，不补写或
+推测缺失的 Formal accuracy。[Main Dev]
+
 ## 10. 数值与生成正确性
 
 ### 10.1 Tiny architecture oracle
