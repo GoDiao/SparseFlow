@@ -264,8 +264,8 @@ resident/streaming 矩阵。不得把量化误差归因于 streaming。[Main Dev
 
 Provider hot counters、policy diagnostics 和 telemetry 已拆分；summary 路径不再
 排序 heat table、计算逐层 unique experts 或保留 layer records。真实 C3-R
-三模式交错实验中，summary 相对 none 的 decode 差异为 `-0.57%`，九次完整
-logits/IDs exact，详细关键路径闭合 `98.91%`。结果见
+配对实验中，summary 相对 none 的 decode 差异为 `-0.37%`，13 次完整
+logits/IDs exact，详细关键路径闭合 `98.73%`。结果见
 `docs/results/qwen36_stage7_5_0_observer_20260716.md`。[Main Dev]
 
 ## Early Non-goals

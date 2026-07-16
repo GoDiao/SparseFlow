@@ -2,8 +2,8 @@
 
 Stage 7.5.0 separated fixed-cost performance counters from detailed runtime
 diagnostics before INT8/native work began. The experiment used one loaded C3-R
-BF16 runtime, a fixed prompt, 10 CPU threads, 8 generated tokens, and three
-interleaved repetitions of `none`, `summary`, and `layer` telemetry.
+BF16 runtime, a fixed prompt, 10 CPU threads, 32 generated tokens, five AB/BA
+paired `none`/`summary` repetitions, and three trailing `layer` diagnostics.
 
 ## Correctness and acceptance
 
@@ -16,16 +16,16 @@ timing_categories_present                True
 all_pass                                 True
 ```
 
-All nine runs produced identical generated IDs and complete next-token logits
+All 13 runs produced identical generated IDs and complete next-token logits
 fingerprints.
 
 ## Observer effect
 
 | Level | Median decode tok/s | Delta vs none | Median wall s | Observer self-time |
 |---|---:|---:|---:|---:|
-| none | 3.4243 | - | 5.2927 | 0 ms |
-| summary | 3.4046 | -0.57% | 5.4473 | 6.97 ms |
-| layer | 3.1181 | -8.94% | 5.6893 | 22.65 ms |
+| none | 3.3167 | - | 12.7020 | 0 ms |
+| summary | 3.3043 | -0.37% paired | 12.8004 | 28.61 ms |
+| layer | 3.3306 | +0.42% | 12.6156 | 83.57 ms |
 
 `summary` now keeps only O(1) counters and per-forward aggregates. It does not
 compute per-layer unique experts or retain layer records. `layer` is explicitly
@@ -33,7 +33,7 @@ a diagnostic mode and is excluded from performance headline measurements.
 
 ## Timing closure
 
-The median detailed critical-path closure was `98.91%`. The available
+The median detailed critical-path closure was `98.73%`. The available
 categories are router, dispatch, prepare, provider get, expert kernel, routing
 accumulation, cache lookup, victim selection, allocation/reuse, policy
 maintenance, positional reads, tensor decode/view, and telemetry observer
