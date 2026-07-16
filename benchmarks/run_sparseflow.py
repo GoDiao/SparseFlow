@@ -204,6 +204,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hot-ratio", type=float, default=0.25)
     parser.add_argument("--coalesce-gap", type=int, default=0)
     parser.add_argument(
+        "--expert-storage",
+        choices=("bf16", "int8-reference", "int8-native"),
+        default="bf16",
+    )
+    parser.add_argument("--int8-container")
+    parser.add_argument("--stage", choices=("7.4", "7.5.5", "7.5.6"))
+    parser.add_argument(
         "--cache-state",
         choices=("uncontrolled", "app-cold", "workload-warm", "model-cold"),
         default="workload-warm",
@@ -233,6 +240,14 @@ def main(argv: list[str] | None = None) -> int:
     rows = load_manifest(manifest, args.limit or None)
     if not rows:
         parser.error("manifest contains no rows")
+    if args.expert_storage != "bf16" and not args.int8_container:
+        parser.error("INT8 expert storage requires --int8-container")
+    int8_container = None
+    if args.int8_container:
+        int8_container = Path(args.int8_container).expanduser()
+        if not int8_container.is_absolute():
+            int8_container = root / int8_container
+        int8_container = int8_container.resolve()
 
     configure_threads(args.threads)
     import torch
@@ -250,19 +265,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.prefetch_workers is not None:
         config["prefetch_workers"] = args.prefetch_workers
     effective_cache_bytes = cache_bytes if config["mode"] == "streaming" else None
+    stage = args.stage or ("7.4" if args.expert_storage == "bf16" else "7.5.5")
     output = Path(args.output).expanduser()
     result: dict[str, Any] = {
         "schema_version": 3,
-        "kind": "sparseflow_stage7_4_benchmark",
-        "stage": "7.4",
+        "kind": f"sparseflow_stage{stage.replace('.', '_')}_benchmark",
+        "stage": stage,
         "agent": "Main Dev",
         "experiment_id": (
-            f"{args.variant.lower()}-{cache_bytes // 1024**2}m-"
+            f"{args.expert_storage}-{args.variant.lower()}-{cache_bytes // 1024**2}m-"
             f"{args.cache_state}-t{args.threads}-o{args.max_new_tokens}"
         ),
-        "backend": "sparseflow_cpu_resident"
-        if config["mode"] == "resident"
-        else "sparseflow_cpu_streaming",
+        "backend": f"sparseflow_{args.expert_storage}_cpu_{config['mode']}",
         "variant": args.variant,
         "started_utc": datetime.now(timezone.utc).isoformat(),
         "model": model_snapshot(model_dir),
@@ -274,6 +288,8 @@ def main(argv: list[str] | None = None) -> int:
             "interop_threads": torch.get_num_interop_threads(),
             "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
             "load_mode": "memory-native",
+            "expert_storage": args.expert_storage,
+            "int8_container": str(int8_container) if int8_container is not None else None,
             **config,
         },
         "host": host_snapshot(),
@@ -325,6 +341,8 @@ def main(argv: list[str] | None = None) -> int:
         hot_ratio=args.hot_ratio,
         telemetry_level=args.telemetry_level,
         experts_implementation="eager",
+        expert_storage=args.expert_storage,
+        int8_container=int8_container,
     )
     result["load"] = {
         "seconds": time.perf_counter() - load_started,
@@ -335,9 +353,10 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.cache_state == "model-cold":
-            result["page_cache_control"] = evict_file_pages(
-                model_weight_files(model_dir)
-            )
+            page_files = list(model_weight_files(model_dir))
+            if int8_container is not None:
+                page_files.extend(sorted(int8_container.rglob("*.sfi")))
+            result["page_cache_control"] = evict_file_pages(page_files)
 
         for warmup_index in range(args.warmup):
             row = rows[warmup_index % len(rows)]
