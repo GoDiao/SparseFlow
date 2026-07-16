@@ -76,6 +76,7 @@ class ResidentExpertProvider:
         self._backings: dict[tuple[int, str], bytearray] = {}
         self._fused: dict[int, dict[str, Any]] = {}
         self._requests = 0
+        self._resident_bytes = 0
         self._closed = False
         self._preload_calls_before = reader.read_calls
         self._preload_bytes_before = reader.read_bytes
@@ -114,6 +115,7 @@ class ResidentExpertProvider:
                         f"expected={span.shape}, actual={tuple(tensor.shape)}"
                     )
                 self._backings[(layer, part)] = backing
+                self._resident_bytes += len(backing)
                 weights[part] = tensor
             self._fused[layer] = weights
 
@@ -173,7 +175,7 @@ class ResidentExpertProvider:
             "resident_layers": len(self._fused),
             "resident_experts": len(self._fused) * self.locator.num_experts,
             "resident_buffers": len(self._backings),
-            "resident_bytes": sum(len(buffer) for buffer in self._backings.values()),
+            "resident_bytes": self._resident_bytes,
         }
 
     def storage_report(self) -> dict[str, Any]:
@@ -198,6 +200,7 @@ class ResidentExpertProvider:
     def close(self) -> None:
         self._fused.clear()
         self._backings.clear()
+        self._resident_bytes = 0
         self._closed = True
 
     def __enter__(self) -> "ResidentExpertProvider":

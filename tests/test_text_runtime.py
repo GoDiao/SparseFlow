@@ -133,6 +133,33 @@ class TextRuntimeTest(unittest.TestCase):
         self.assertEqual(audit.records[0]["layer"], 3)
         self.assertEqual(audit.records[0]["shape"], [2, 1])
 
+    def test_none_telemetry_skips_provider_counter_snapshots(self):
+        class Provider:
+            backend_id = "test"
+
+            def observe_routes(self, _layer, _selected):
+                pass
+
+            def prepare(self, _layer, _expert_ids):
+                pass
+
+            def counters(self):
+                raise AssertionError("none telemetry entered observer counters")
+
+            def get(self, _layer, _expert_id):
+                return {
+                    "gate_up_proj": torch.ones((4, 2), dtype=torch.bfloat16),
+                    "down_proj": torch.ones((2, 2), dtype=torch.bfloat16),
+                }
+
+        module = SparseFlowQwenExperts(0, Provider(), RouteAudit())
+        output = module(
+            torch.ones((1, 2), dtype=torch.bfloat16),
+            torch.zeros((1, 1), dtype=torch.long),
+            torch.ones((1, 1), dtype=torch.bfloat16),
+        )
+        self.assertEqual(tuple(output.shape), (1, 2))
+
     def test_prefill_decode_and_greedy_generation(self):
         model = FakeModel()
         runtime = Qwen36TextRuntime(

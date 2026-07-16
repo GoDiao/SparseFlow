@@ -96,6 +96,16 @@ class SparseFlowQwenExperts(_Module):
     def forward(self, hidden_states, top_k_index, top_k_weights):
         self.route_audit.record(self.layer, top_k_index)
         self.provider.observe_routes(self.layer, top_k_index)
+        if self.telemetry.level == "none":
+            return run_routed_experts(
+                hidden_states,
+                top_k_index,
+                top_k_weights,
+                lambda expert_id: self.provider.get(self.layer, expert_id),
+                prepare_routed=lambda expert_ids: self.provider.prepare(
+                    self.layer, expert_ids
+                ),
+            )
         before = _provider_counters(self.provider)
         started = time.perf_counter()
         result = run_routed_experts(
