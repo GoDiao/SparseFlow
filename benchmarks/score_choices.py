@@ -87,6 +87,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data", default="benchmarks/manifests/colibri_smoke.jsonl")
     parser.add_argument("--output", default="benchmarks/results/colibri-smoke.json")
     parser.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
+    parser.add_argument(
+        "--backend",
+        choices=("transformers", "bf16-reference", "int8-reference"),
+        default="transformers",
+    )
+    parser.add_argument("--int8-container")
     parser.add_argument("--threads", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args(argv)
@@ -119,32 +125,64 @@ def main(argv: list[str] | None = None) -> int:
 
     started = process_snapshot()
     load_start = time.perf_counter()
-    tokenizer_start = time.perf_counter()
-    tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True, use_fast=True)
-    tokenizer_load_seconds = time.perf_counter() - tokenizer_start
-    model_start = time.perf_counter()
-    model = AutoModelForImageTextToText.from_pretrained(
-        model_dir,
-        local_files_only=True,
-        dtype=dtype,
-        device_map={"": "cpu"},
-        low_cpu_mem_usage=True,
-        use_safetensors=True,
-    ).eval()
-    model_load_seconds = time.perf_counter() - model_start
-    materialize_seconds = materialize_cpu_resident(model, torch)
+    sparseflow_runtime = None
+    if args.backend == "transformers":
+        tokenizer_start = time.perf_counter()
+        tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True, use_fast=True)
+        tokenizer_load_seconds = time.perf_counter() - tokenizer_start
+        model_start = time.perf_counter()
+        model = AutoModelForImageTextToText.from_pretrained(
+            model_dir,
+            local_files_only=True,
+            dtype=dtype,
+            device_map={"": "cpu"},
+            low_cpu_mem_usage=True,
+            use_safetensors=True,
+        ).eval()
+        model_load_seconds = time.perf_counter() - model_start
+        materialize_seconds = materialize_cpu_resident(model, torch)
+        loader_report = None
+    else:
+        if args.dtype != "bf16":
+            parser.error("SparseFlow reference choice scoring currently requires bf16")
+        if args.backend == "int8-reference" and not args.int8_container:
+            parser.error("int8-reference backend requires --int8-container")
+        from sparseflow.text_runtime import Qwen36TextRuntime
+
+        model_start = time.perf_counter()
+        sparseflow_runtime = Qwen36TextRuntime.from_pretrained(
+            model_dir,
+            mode="resident",
+            dtype="bf16",
+            load_mode="memory-native",
+            expert_storage=(
+                "int8-reference" if args.backend == "int8-reference" else "bf16"
+            ),
+            int8_container=args.int8_container,
+            telemetry_level="none",
+            experts_implementation="eager",
+        )
+        model_load_seconds = time.perf_counter() - model_start
+        tokenizer_load_seconds = 0.0
+        materialize_seconds = 0.0
+        model = sparseflow_runtime.model
+        tokenizer = sparseflow_runtime.tokenizer
+        loader_report = sparseflow_runtime.loader_report
     load_seconds = time.perf_counter() - load_start
     loaded = process_snapshot()
 
     result: dict[str, Any] = {
         "schema_version": 2,
-        "backend": "transformers_cpu_choice_score",
+        "backend": f"{args.backend}_cpu_choice_score",
         "model": model_snapshot(model_dir),
         "runtime": {
             "torch": torch.__version__,
             "transformers": transformers.__version__,
             "dtype": args.dtype,
             "threads": torch.get_num_threads(),
+            "expert_storage": (
+                sparseflow_runtime.expert_storage if sparseflow_runtime is not None else "bf16"
+            ),
         },
         "host": host_snapshot(),
         "git": git_snapshot(root),
@@ -160,6 +198,7 @@ def main(argv: list[str] | None = None) -> int:
             "materialize_seconds": materialize_seconds,
             "metrics": loaded,
             "physical_resident": True,
+            "loader": loader_report,
         },
         "questions": [],
     }
@@ -210,6 +249,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
     result["finished_metrics"] = delta(started, process_snapshot())
+    if sparseflow_runtime is not None:
+        sparseflow_runtime.close()
     write_json(args.output, result)
     print(json.dumps(result["summary"], ensure_ascii=False))
     return 0
@@ -217,3 +258,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# SparseFlow reference backend integration: [Main Dev]
