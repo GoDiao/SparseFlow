@@ -469,6 +469,7 @@ class TextRuntimeTest(unittest.TestCase):
                 "demand_reuse_hits": 1,
                 "demand_prefetch_served": 0,
                 "demand_misses": 1,
+                "transient_prefetch_entries": 0,
             }
             after = {
                 **storage,
@@ -492,6 +493,7 @@ class TextRuntimeTest(unittest.TestCase):
                     "expert_reader_calls_after_init": 0,
                     "expert_reader_bytes_after_init": 0,
                 },
+                "prefetch": None,
             }
 
         fake_index = types.SimpleNamespace(

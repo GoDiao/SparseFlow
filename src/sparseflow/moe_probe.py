@@ -119,6 +119,7 @@ class CachedExpertProvider:
         coalesce_gap: int = 0,
         prefetch_policy: str = "current-route",
         prefetch_budget_ratio: float = 0.25,
+        locator: Any | None = None,
     ):
         if prefetch_workers < 0:
             raise ValueError("prefetch_workers must be non-negative")
@@ -128,7 +129,7 @@ class CachedExpertProvider:
             raise ValueError(f"unknown prefetch policy: {prefetch_policy}")
         if not 0.0 <= prefetch_budget_ratio <= 1.0:
             raise ValueError("prefetch_budget_ratio must be in [0, 1]")
-        self.locator = ExpertLocator(model_dir)
+        self.locator = locator if locator is not None else ExpertLocator(model_dir)
         self.cache = cache
         self.reader = reader
         self.torch = torch

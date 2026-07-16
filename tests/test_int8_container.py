@@ -149,6 +149,53 @@ class Int8ContainerTest(unittest.TestCase):
             self.assertEqual(json.loads(stdout.getvalue())["format_id"], "canonical-int8-v1")
             self.assertEqual(json.loads(report.read_text())["experts"], 2)
 
+    def test_streaming_provider_reuses_shared_prefetch_lifecycle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            model = root / "model"
+            output = root / "int8"
+            model.mkdir()
+            write_fixture(model)
+            convert_experts_int8(model, output)
+            index = Int8ExpertIndex.from_dir(output)
+            budget = index.locate(0, 0).nbytes * 2
+            resident = Int8ResidentExpertProvider(output, torch)
+            reader = ShardReader()
+            streaming = Int8StreamingExpertProvider(
+                output,
+                ExpertCache(max_bytes=budget),
+                reader,
+                torch,
+                prefetch_workers=2,
+                coalesce_gap=0,
+                prefetch_policy="current-route",
+            )
+            try:
+                streaming.begin_forward(0, "prefill")
+                streaming.prepare(0, (0, 1))
+                for expert in (0, 1):
+                    left = resident.get(0, expert)
+                    right = streaming.get(0, expert)
+                    for part in ("gate_up_proj", "down_proj"):
+                        self.assertTrue(torch.equal(left[part], right[part]))
+                streaming.finish_generation()
+                counters = streaming.counters()
+                prefetch = streaming.prefetch_stats()
+                self.assertEqual(prefetch["submitted"], 2)
+                self.assertEqual(prefetch["completed"], 1)
+                self.assertEqual(counters["demand_requests"], 2)
+                self.assertEqual(
+                    counters["demand_requests"],
+                    counters["demand_reuse_hits"]
+                    + counters["demand_prefetch_served"]
+                    + counters["demand_misses"],
+                )
+                self.assertLessEqual(counters["cached_bytes"], budget)
+            finally:
+                resident.close()
+                streaming.close()
+                reader.close()
+
 
 if __name__ == "__main__":
     unittest.main()

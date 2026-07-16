@@ -231,11 +231,9 @@ class Qwen36TextRuntime:
             raise ValueError("expert_storage must be bf16, int8-reference, or int8-native")
         if expert_storage in {"int8-reference", "int8-native"}:
             if load_mode != "memory-native":
-                raise ValueError("INT8 reference experts require memory-native loading")
+                raise ValueError("INT8 experts require memory-native loading")
             if int8_container is None:
-                raise ValueError("INT8 reference experts require int8_container")
-            if prefetch_workers:
-                raise ValueError("INT8 reference provider does not implement prefetch yet")
+                raise ValueError("INT8 experts require int8_container")
             int8_root = Path(int8_container).expanduser().resolve()
             int8_index = Int8ExpertIndex.from_dir(int8_root)
         else:
@@ -289,6 +287,10 @@ class Qwen36TextRuntime:
                             reader,
                             torch,
                             native=expert_storage == "int8-native",
+                            prefetch_workers=prefetch_workers,
+                            coalesce_gap=coalesce_gap,
+                            prefetch_policy=prefetch_policy,
+                            prefetch_budget_ratio=prefetch_budget_ratio,
                         )
                     else:
                         provider = StreamingExpertProvider(
@@ -1021,6 +1023,10 @@ def compare_int8_reference_paths(
     cache_policy: str = "lru",
     telemetry_level: str = "summary",
     expert_storage: str = "int8-reference",
+    prefetch_workers: int = 0,
+    prefetch_policy: str = "none",
+    prefetch_budget_ratio: float = 0.10,
+    coalesce_gap: int = 0,
 ) -> dict[str, Any]:
     """Compare INT8 resident/streaming storage with one reference kernel."""
 
@@ -1062,7 +1068,10 @@ def compare_int8_reference_paths(
         expert_storage=expert_storage,
         int8_container=container,
         cache_policy=cache_policy,
-        prefetch_policy="none",
+        prefetch_workers=prefetch_workers,
+        prefetch_policy=prefetch_policy,
+        prefetch_budget_ratio=prefetch_budget_ratio,
+        coalesce_gap=coalesce_gap,
         telemetry_level=telemetry_level,
     )
 
@@ -1079,6 +1088,7 @@ def compare_int8_reference_paths(
         streaming["storage_phases"]["after_generation"],
     )
     provider = streaming["storage_phases"]["after_generation"]
+    prefetch = streaming.get("prefetch")
     demand_accounted = provider["demand_requests"] == (
         provider["demand_reuse_hits"]
         + provider["demand_prefetch_served"]
@@ -1104,6 +1114,8 @@ def compare_int8_reference_paths(
         "streaming_generation_reads_experts": streaming_reads["read_bytes"] > 0,
         "cache_budget_respected": provider["cached_bytes"] <= cache_bytes,
         "demand_accounting_exact": demand_accounted,
+        "prefetch_failure_free": prefetch is None or prefetch.get("failed", 0) == 0,
+        "prefetch_transients_drained": provider["transient_prefetch_entries"] == 0,
     }
     return {
         "schema_version": 1,
@@ -1119,6 +1131,10 @@ def compare_int8_reference_paths(
         "prompt": prompt,
         "max_new_tokens": max_new_tokens,
         "cache_bytes": cache_bytes,
+        "prefetch_workers": prefetch_workers,
+        "prefetch_policy": prefetch_policy,
+        "prefetch_budget_ratio": prefetch_budget_ratio,
+        "coalesce_gap": coalesce_gap,
         "runtime_identity": resident["runtime_identity"],
         "resident": {
             **resident,

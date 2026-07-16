@@ -357,6 +357,14 @@ def main(argv: list[str] | None = None) -> int:
         choices=("none", "summary", "layer"),
         default="summary",
     )
+    int8_check_p.add_argument("--prefetch-workers", type=int, default=0)
+    int8_check_p.add_argument(
+        "--prefetch-policy",
+        choices=("none", "current-route", "previous-token", "hot-set"),
+        default="none",
+    )
+    int8_check_p.add_argument("--prefetch-budget-ratio", type=float, default=0.10)
+    int8_check_p.add_argument("--coalesce-gap", type=int, default=0)
     int8_check_p.add_argument("--output")
     int8_check_p.add_argument("--json", action="store_true")
 
@@ -707,6 +715,10 @@ def main(argv: list[str] | None = None) -> int:
                 cache_bytes=_parse_single_byte_budget(args.cache_bytes),
                 cache_policy=args.cache_policy,
                 telemetry_level=args.telemetry_level,
+                prefetch_workers=args.prefetch_workers,
+                prefetch_policy=args.prefetch_policy,
+                prefetch_budget_ratio=args.prefetch_budget_ratio,
+                coalesce_gap=args.coalesce_gap,
             )
             encoded = json.dumps(result, indent=2, ensure_ascii=False)
             if args.output:

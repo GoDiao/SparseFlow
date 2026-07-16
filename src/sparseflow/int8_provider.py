@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 import time
 from typing import Any, Mapping
 
-from .cache import ExpertCache
+from .cache import CachedExpert, ExpertCache
 from .int8_container import Int8ExpertIndex, Int8ExpertLocation
 from .loader import ShardReader
+from .moe_probe import CachedExpertProvider
 
 
 def dequantize_expert(location, payloads: Mapping[str, bytes | bytearray | memoryview], torch):
@@ -151,7 +152,74 @@ class Int8ResidentExpertProvider:
         self._closed = True
 
 
-class Int8StreamingExpertProvider:
+@dataclass(frozen=True)
+class _Int8ReadPart:
+    part: str
+    shard: Path
+    file_offset: int
+    nbytes: int
+
+
+@dataclass(frozen=True)
+class _Int8ReadLocation:
+    source: Int8ExpertLocation
+    parts: tuple[_Int8ReadPart, ...]
+
+    @property
+    def layer(self) -> int:
+        return self.source.layer
+
+    @property
+    def expert_id(self) -> int:
+        return self.source.expert_id
+
+    @property
+    def nbytes(self) -> int:
+        return self.source.nbytes
+
+    def __iter__(self):
+        return iter(self.parts)
+
+
+class _Int8ReadIndex:
+    """Expose canonical INT8 data/scales through the generic range interface."""
+
+    def __init__(self, index: Int8ExpertIndex):
+        self.index = index
+        self.layers = index.layers
+        self._locations: dict[tuple[int, int], _Int8ReadLocation] = {}
+
+    def locate(self, layer: int, expert_id: int) -> _Int8ReadLocation:
+        key = (layer, expert_id)
+        location = self._locations.get(key)
+        if location is not None:
+            return location
+        source = self.index.locate(layer, expert_id)
+        spans = []
+        for part in source.parts:
+            spans.extend(
+                (
+                    _Int8ReadPart(
+                        part=f"{part.part}.data",
+                        shard=source.file,
+                        file_offset=part.data_offset,
+                        nbytes=part.data_nbytes,
+                    ),
+                    _Int8ReadPart(
+                        part=f"{part.part}.scales",
+                        shard=source.file,
+                        file_offset=part.scale_offset,
+                        nbytes=part.scale_nbytes,
+                    ),
+                )
+            )
+        location = _Int8ReadLocation(source=source, parts=tuple(spans))
+        self._locations[key] = location
+        return location
+
+
+class Int8StreamingExpertProvider(CachedExpertProvider):
+    """Canonical INT8 storage adapter for the shared cache/prefetch lifecycle."""
 
     def __init__(
         self,
@@ -160,158 +228,80 @@ class Int8StreamingExpertProvider:
         reader: ShardReader,
         torch,
         native: bool = False,
+        prefetch_workers: int = 0,
+        coalesce_gap: int = 0,
+        prefetch_policy: str = "current-route",
+        prefetch_budget_ratio: float = 0.25,
     ):
         self.index = Int8ExpertIndex.from_dir(container_dir)
-        self.cache = cache
-        self.reader = reader
-        self.torch = torch
         self.native = native
+        self._closed = False
+        locator = _Int8ReadIndex(self.index)
+        super().__init__(
+            container_dir,
+            cache,
+            reader,
+            torch,
+            prefetch_workers=prefetch_workers,
+            coalesce_gap=coalesce_gap,
+            prefetch_policy=prefetch_policy,
+            prefetch_budget_ratio=prefetch_budget_ratio,
+            locator=locator,
+        )
         self.backend_id = (
             "sparseflow-int8-native-streaming"
             if native
             else "sparseflow-int8-reference-streaming"
         )
-        self._closed = False
-        self._forward = -1
-        self._phase = "unknown"
-        self._demand_requests = 0
-        self._demand_reuse_hits = 0
-        self._demand_misses = 0
-        self._read_ms_total = 0.0
-        self._dequant_ms_total = 0.0
-        self._native_views: dict[tuple[int, int], tuple[Any, dict[str, Any]]] = {}
-        if native:
-            self.cache.add_eviction_listener(self._on_cache_evict)
 
     def get(self, layer: int, expert_id: int):
         if self._closed:
             raise RuntimeError("INT8 streaming provider is closed")
-        location = self.index.locate(layer, expert_id)
-        entry = self.cache.lookup(layer, expert_id, expected_nbytes=location.nbytes)
-        self._demand_requests += 1
-        if entry is None:
-            self._demand_misses += 1
-            started = time.perf_counter()
-            payloads = self._read_location(location)
-            self._read_ms_total += (time.perf_counter() - started) * 1000.0
-            entry = self.cache.put_loaded(layer, expert_id, payloads)
-        else:
-            self._demand_reuse_hits += 1
-        started = time.perf_counter()
+        return super().get(layer, expert_id)
+
+    def _decode_entry(
+        self,
+        key: tuple[int, int],
+        location: _Int8ReadLocation,
+        entry: CachedExpert,
+    ) -> dict[str, Any]:
+        existing = self._decoded.get(key) if self.native else None
+        if existing is not None and existing[0] is entry:
+            return existing[1]
+
+        started = time.perf_counter() if self.cache.collect_timings else None
         if self.native:
             from .native_int8 import prepare_native_weights
 
-            key = (layer, expert_id)
-            existing = self._native_views.get(key)
-            if existing is not None and existing[0] is entry:
-                weights = existing[1]
-            else:
-                weights = prepare_native_weights(location, entry.parts, self.torch)
-                if self.cache.peek(layer, expert_id) is entry:
-                    self._native_views[key] = (entry, weights)
+            weights = prepare_native_weights(location.source, entry.parts, self.torch)
             result = {"gate_up_proj": weights, "down_proj": None}
         else:
-            result = dequantize_expert(location, entry.parts, self.torch)
-        self._dequant_ms_total += (time.perf_counter() - started) * 1000.0
+            result = dequantize_expert(location.source, entry.parts, self.torch)
+        if started is not None:
+            self._timings_ms["tensor_decode_view"] += (
+                time.perf_counter() - started
+            ) * 1000.0
+        if self.native and self.cache.peek(*key) is entry:
+            self._decoded[key] = (entry, result)
         return result
 
-    def _on_cache_evict(self, entry) -> None:
-        key = (entry.layer, entry.expert_id)
-        existing = self._native_views.get(key)
-        if existing is not None and existing[0] is entry:
-            self._native_views.pop(key, None)
-
-    def _read_location(self, location: Int8ExpertLocation) -> dict[str, bytearray]:
-        payloads = {}
-        for part in location.parts:
-            data = bytearray(part.data_nbytes)
-            scales = bytearray(part.scale_nbytes)
-            self.reader.readinto(location.file, part.data_offset, data)
-            self.reader.readinto(location.file, part.scale_offset, scales)
-            payloads[f"{part.part}.data"] = data
-            payloads[f"{part.part}.scales"] = scales
-        return payloads
-
-    def prepare(self, layer: int, expert_ids: tuple[int, ...]) -> None:
-        for expert_id in expert_ids:
-            self.index.locate(layer, int(expert_id))
-
-    def begin_forward(self, forward: int, phase: str) -> None:
-        self._forward = forward
-        self._phase = phase
-        self.cache.begin_forward(forward, phase)
-
-    def observe_routes(self, layer: int, selected_experts) -> None:
-        counts = Counter(int(value) for value in selected_experts.reshape(-1).tolist())
-        self.cache.observe_routes(layer, counts)
-
-    def predict(self, routes_by_layer) -> None:
-        del routes_by_layer
-
-    def finish_generation(self) -> None:
-        pass
-
-    def snapshot(self) -> dict[str, Any]:
-        return self.counters()
-
     def counters(self) -> dict[str, Any]:
-        cache = self.cache.counters()
-        return {
-            "backend_id": self.backend_id,
-            "reader_calls": self.reader.read_calls,
-            "reader_bytes": self.reader.read_bytes,
-            "requests": cache["requests"],
-            "cache_hits": cache["hits"],
-            "cache_misses": cache["misses"],
-            "cache_evictions": cache["evictions"],
-            "cached_experts": cache["cache_entries"],
-            "cached_bytes": cache["cached_bytes"],
-            "loaded_bytes": cache["loaded_bytes"],
-            "hit_bytes": cache["hit_bytes"],
-            "miss_bytes": cache["miss_bytes"],
-            "admission_rejections": cache["admission_rejections"],
-            "decoded_entries": 0,
-            "native_views": len(self._native_views),
-            "transient_prefetch_entries": 0,
-            "demand_read_calls": self.reader.read_calls,
-            "demand_read_bytes": self.reader.read_bytes,
-            "demand_read_ms_total": self._read_ms_total,
-            "demand_requests": self._demand_requests,
-            "demand_reuse_hits": self._demand_reuse_hits,
-            "demand_prefetch_served": 0,
-            "demand_misses": self._demand_misses,
-            "prefetch_submitted": 0,
-            "prefetch_hits": 0,
-            "prefetch_late": 0,
-            "prefetch_hit_bytes": 0,
-            "prefetch_wasted_ready_bytes": 0,
-            "timing_pread_ms_total": self._read_ms_total,
-            "timing_tensor_decode_view_ms_total": self._dequant_ms_total,
-            **{key: value for key, value in cache.items() if key.startswith("timing_")},
-        }
+        result = super().counters()
+        result["native_views"] = self.decoded_entries if self.native else 0
+        return result
 
     def storage_report(self) -> dict[str, Any]:
         return {
-            **self.counters(),
+            **super().storage_report(),
             "policy": "canonical INT8 routed experts loaded through ExpertCache",
-            "cache_policy": self.cache.policy.snapshot(),
             "format_id": self.index.manifest["format_id"],
-            "prefetch": None,
-        }
-
-    def prefetch_stats(self) -> dict[str, int]:
-        return {
-            "submitted": 0,
-            "failed": 0,
-            "hits": 0,
-            "late": 0,
-            "wasted_ready_bytes": 0,
         }
 
     def close(self) -> None:
-        if self.native:
-            self.cache.remove_eviction_listener(self._on_cache_evict)
-        self._native_views.clear()
+        if self._closed:
+            return
+        super().close()
+        self._decoded.clear()
         self._closed = True
 
 
