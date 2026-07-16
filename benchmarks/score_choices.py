@@ -83,6 +83,61 @@ def score_one(model: Any, tokenizer: Any, context: str, choice: str, torch: Any)
     }
 
 
+def score_batch(
+    model: Any,
+    tokenizer: Any,
+    context: str,
+    choices: list[str],
+    torch: Any,
+) -> tuple[list[dict[str, Any]], float]:
+    """Score all choices in one padded batch to share expert dispatch and I/O."""
+
+    examples = [split_continuation(tokenizer, context, choice) for choice in choices]
+    max_length = max(len(full_ids) for full_ids, _continuation in examples)
+    pad_token_id = tokenizer.pad_token_id
+    if pad_token_id is None:
+        pad_token_id = tokenizer.eos_token_id
+    if pad_token_id is None:
+        raise ValueError("tokenizer requires a pad or eos token for batched scoring")
+    input_ids = torch.full(
+        (len(examples), max_length),
+        int(pad_token_id),
+        dtype=torch.long,
+        device="cpu",
+    )
+    attention_mask = torch.zeros_like(input_ids)
+    for index, (full_ids, _continuation) in enumerate(examples):
+        input_ids[index, : len(full_ids)] = torch.tensor(full_ids, dtype=torch.long)
+        attention_mask[index, : len(full_ids)] = 1
+    started = time.perf_counter()
+    with torch.inference_mode():
+        logits = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            use_cache=False,
+        ).logits
+    elapsed = time.perf_counter() - started
+
+    result = []
+    for index, ((full_ids, continuation), choice) in enumerate(zip(examples, choices)):
+        positions = torch.arange(len(full_ids) - len(continuation), len(full_ids))
+        token_logits = logits[index, positions - 1]
+        targets = torch.tensor(continuation, dtype=torch.long)
+        log_probs = torch.log_softmax(token_logits.float(), dim=-1)
+        selected = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+        values = [float(value) for value in selected.tolist()]
+        result.append(
+            {
+                "loglikelihood": sum(values),
+                "token_loglikelihoods": values,
+                "continuation_tokens": len(continuation),
+                "continuation_chars": max(1, len(choice)),
+                "forward_seconds": elapsed / len(choices),
+            }
+        )
+    return result, elapsed
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run Colibri-style CPU choice scoring.")
     parser.add_argument("--model", default="model/Qwen3.6-35B-A3B")
@@ -104,6 +159,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cache-bytes", default="4GiB")
     parser.add_argument("--threads", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument(
+        "--choice-execution",
+        choices=("batch", "sequential"),
+        default="batch",
+    )
     args = parser.parse_args(argv)
 
     import os
@@ -212,6 +272,10 @@ def main(argv: list[str] | None = None) -> int:
             "rows": len(rows),
             "sha256": sha256_text(data_path.read_text(encoding="utf-8").splitlines(True)),
         },
+        "protocol": {
+            "choice_execution": args.choice_execution,
+            "batch_size": "choices per question" if args.choice_execution == "batch" else 1,
+        },
         "load": {
             "seconds": load_seconds,
             "tokenizer_load_seconds": tokenizer_load_seconds,
@@ -230,14 +294,29 @@ def main(argv: list[str] | None = None) -> int:
             if sparseflow_runtime is not None and sparseflow_runtime.provider is not None
             else None
         )
-        choice_scores = []
-        for choice_index, choice in enumerate(row["choices"]):
+        batch_forward_seconds = None
+        if args.choice_execution == "batch":
             if sparseflow_runtime is not None and sparseflow_runtime.provider is not None:
                 sparseflow_runtime.provider.begin_forward(
-                    index * len(row["choices"]) + choice_index,
+                    index,
                     "prefill",
                 )
-            choice_scores.append(score_one(model, tokenizer, row["ctx"], choice, torch))
+            choice_scores, batch_forward_seconds = score_batch(
+                model,
+                tokenizer,
+                row["ctx"],
+                row["choices"],
+                torch,
+            )
+        else:
+            choice_scores = []
+            for choice_index, choice in enumerate(row["choices"]):
+                if sparseflow_runtime is not None and sparseflow_runtime.provider is not None:
+                    sparseflow_runtime.provider.begin_forward(
+                        index * len(row["choices"]) + choice_index,
+                        "prefill",
+                    )
+                choice_scores.append(score_one(model, tokenizer, row["ctx"], choice, torch))
         after_provider = (
             sparseflow_runtime.provider.counters()
             if sparseflow_runtime is not None and sparseflow_runtime.provider is not None
@@ -266,6 +345,7 @@ def main(argv: list[str] | None = None) -> int:
                 "correct_norm_char": best_char == int(row["gold"]),
                 "correct_norm_token": best_token == int(row["gold"]),
                 "choices": choice_scores,
+                "batch_forward_seconds": batch_forward_seconds,
                 "provider_delta": (
                     numeric_delta(before_provider, after_provider)
                     if before_provider is not None and after_provider is not None
