@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 from typing import Any
 
 from .analyze import analyze_model
@@ -18,6 +19,7 @@ from .benchmark import (
 from .bytes import format_bytes
 from .cache_policy import POLICY_VARIANTS
 from .loader import load_expert_raw
+from .int8_container import convert_experts_int8
 from .locator import ExpertLocator
 from .memory_loader import (
     build_memory_load_plan,
@@ -80,6 +82,17 @@ def main(argv: list[str] | None = None) -> int:
     native_load_p.add_argument("model")
     native_load_p.add_argument("--dtype", choices=("bf16", "fp16", "fp32"), default="bf16")
     native_load_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    int8_convert_p = sub.add_parser(
+        "int8-convert",
+        help="Convert routed BF16 experts into a versioned SparseFlow INT8 container.",
+    )
+    int8_convert_p.add_argument("model")
+    int8_convert_p.add_argument("--output", required=True)
+    int8_convert_p.add_argument("--layers", help="Layer list/ranges, e.g. 0-3 or 0,2,4.")
+    int8_convert_p.add_argument("--threads", type=int, default=10)
+    int8_convert_p.add_argument("--no-resume", action="store_true")
+    int8_convert_p.add_argument("--json", action="store_true")
 
     for command, help_text in (
         ("expert-stat", "Locate one fused expert without reading its payload."),
@@ -375,6 +388,36 @@ def main(argv: list[str] | None = None) -> int:
                 else _format_native_load(result)
             )
             return 0
+        if args.command == "int8-convert":
+            if args.threads < 1:
+                raise ValueError("threads must be positive")
+            import torch
+
+            torch.set_num_threads(args.threads)
+            if args.layers:
+                locator = ExpertLocator(args.model)
+                selected_layers = parse_layers(args.layers, max(locator.layers) + 1)
+            else:
+                selected_layers = None
+            result = convert_experts_int8(
+                args.model,
+                args.output,
+                layers=selected_layers,
+                resume=not args.no_resume,
+                progress=lambda item: print(
+                    f"int8-convert layer={item['layer']} "
+                    f"complete={item['layers_complete']}/{item['layers_total']} "
+                    f"experts={item['experts_complete']}",
+                    file=sys.stderr,
+                    flush=True,
+                ),
+            )
+            print(
+                json.dumps(result, indent=2, ensure_ascii=False)
+                if args.json
+                else _format_int8_conversion(result)
+            )
+            return 0
         if args.command == "expert-stat":
             result = ExpertLocator(args.model).locate(args.layer, args.expert).as_dict()
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_expert_stat(result))
@@ -646,6 +689,22 @@ def _format_inspect(result: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _format_int8_conversion(result: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            f"SparseFlow INT8 container: {result['output']}",
+            f"format      {result['format_id']}",
+            f"layers      {result['layers']}",
+            f"experts     {result['experts']}",
+            f"source      {format_bytes(result['source_bf16_expert_bytes'])}",
+            f"logical     {format_bytes(result['logical_bytes'])}",
+            f"physical    {format_bytes(result['physical_bytes'])}",
+            f"elapsed     {result['elapsed_seconds']:.2f}s",
+            f"peak RSS    {format_bytes(result['peak_rss_bytes'])}",
+        ]
+    )
 
 
 def _format_plan(result: dict[str, Any]) -> str:
@@ -937,3 +996,6 @@ def _write_telemetry_jsonl(path: str, telemetry: dict[str, Any]) -> None:
             stream.write(
                 json.dumps({"agent": "Main Dev", **row}, ensure_ascii=False) + "\n"
             )
+
+
+# [Main Dev]
