@@ -305,6 +305,15 @@ exact；三次 paired 运行中 native resident/streaming 相对 W8A16 reference
 0.5/1/2/4/8 GiB cache、S0/S1/S3/S4 policy、cold/warm state，并实现 INT8
 prefetch 生命周期；BF16 得出的默认参数不得直接沿用。[Main Dev]
 
+### Phase 7.5.5 status: INT8 cache/prefetch calibration complete
+
+INT8 provider 已复用正式 cache/prefetch 生命周期，并通过真实 current-route
+exact gate。28-cell 独立进程矩阵覆盖 warm/cold、0.5/1/2/4/8 GiB、S0/S1/S3/S4、
+1/2/4 workers、coalesce gap 及 8/16/32-token 长度。所有 correctness、budget、
+accounting 和 failure gate 通过。当前主机默认选择 S1 LRU、prefetch disabled；
+4 GiB 是开发默认，8 GiB 是高吞吐配置。结果见
+`docs/results/qwen36_stage7_5_5_int8_cache_prefetch_20260716.md`。[Main Dev]
+
 ## Early Non-goals
 
 - 阶段 6 暂不支持 vision 输入、MTP/speculative decoding 和生产级 serving。
