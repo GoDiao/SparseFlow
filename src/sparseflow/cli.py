@@ -30,6 +30,7 @@ from .moe_probe import compare_expert_paths, compare_moe_cache_paths, compare_mo
 from .moe_runtime import compare_multilayer_moe_paths
 from .text_runtime import (
     Qwen36TextRuntime,
+    compare_int8_reference_paths,
     compare_sparseflow_policy_paths,
     compare_sparseflow_runtime_paths,
     compare_text_paths,
@@ -332,6 +333,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     runtime_check_p.add_argument("--output", help="Write comparison JSON to this path.")
     runtime_check_p.add_argument("--json", action="store_true")
+
+    int8_check_p = sub.add_parser(
+        "int8-reference-check",
+        help="Compare INT8 resident and streaming providers with one reference kernel.",
+    )
+    int8_check_p.add_argument("model")
+    int8_check_p.add_argument("--int8-container", required=True)
+    int8_check_p.add_argument("--prompt", required=True)
+    int8_check_p.add_argument("--max-new-tokens", type=int, default=4)
+    int8_check_p.add_argument("--cache-bytes", default="4GiB")
+    int8_check_p.add_argument(
+        "--cache-policy",
+        choices=("none", "lru", "hot", "heat"),
+        default="lru",
+    )
+    int8_check_p.add_argument(
+        "--telemetry-level",
+        choices=("none", "summary", "layer"),
+        default="summary",
+    )
+    int8_check_p.add_argument("--output")
+    int8_check_p.add_argument("--json", action="store_true")
 
     policy_check_p = sub.add_parser(
         "policy-check",
@@ -648,6 +671,23 @@ def main(argv: list[str] | None = None) -> int:
                 output.write_text(encoded + "\n", encoding="utf-8")
             print(encoded if args.json else _format_runtime_check(result))
             return 0 if result["all_invariants_pass"] else 1
+        if args.command == "int8-reference-check":
+            result = compare_int8_reference_paths(
+                args.model,
+                args.int8_container,
+                prompt=args.prompt,
+                max_new_tokens=args.max_new_tokens,
+                cache_bytes=_parse_single_byte_budget(args.cache_bytes),
+                cache_policy=args.cache_policy,
+                telemetry_level=args.telemetry_level,
+            )
+            encoded = json.dumps(result, indent=2, ensure_ascii=False)
+            if args.output:
+                output = Path(args.output).expanduser()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(encoded + "\n", encoding="utf-8")
+            print(encoded if args.json else _format_runtime_check(result))
+            return 0 if result["all_invariants_pass"] else 1
         if args.command == "policy-check":
             variants = tuple(item.strip() for item in args.variants.split(",") if item.strip())
             result = compare_sparseflow_policy_paths(
@@ -945,7 +985,7 @@ def _format_runtime_check(result: dict[str, Any]) -> str:
     streaming = result["streaming"]
     return "\n".join(
         [
-            "SparseFlow Stage 7.2 runtime-check",
+            f"SparseFlow Stage {result.get('stage', '7.2')} runtime-check",
             f"runtime      {result['runtime_identity']}",
             f"tokens       C3-R={resident['generated_ids']} C3-S={streaming['generated_ids']}",
             f"text         C3-R={resident['text']!r} C3-S={streaming['text']!r}",

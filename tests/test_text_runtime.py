@@ -415,6 +415,43 @@ class TextRuntimeTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("Stage 7.2 runtime-check", output.getvalue())
 
+    def test_int8_reference_check_cli_returns_invariant_status(self):
+        result = {
+            "stage": "7.5.3",
+            "runtime_identity": {"kernel_id": "int8-reference"},
+            "correctness": {"all_equal": True},
+            "invariants": {"full_generation_exact": True},
+            "all_invariants_pass": True,
+            "resident": {
+                "generated_ids": [1],
+                "text": "ok",
+                "provider_storage": {"resident_bytes": 10},
+                "generation_expert_io": {"read_bytes": 0},
+            },
+            "streaming": {
+                "generated_ids": [1],
+                "text": "ok",
+                "generation_expert_io": {"read_bytes": 5},
+            },
+        }
+        with patch(
+            "sparseflow.cli.compare_int8_reference_paths",
+            return_value=result,
+        ) as compare:
+            with redirect_stdout(StringIO()):
+                exit_code = main(
+                    [
+                        "int8-reference-check",
+                        "/tmp/model",
+                        "--int8-container",
+                        "/tmp/int8",
+                        "--prompt",
+                        "hello",
+                    ]
+                )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(compare.call_args.args[:2], ("/tmp/model", "/tmp/int8"))
+
     def test_stage73_policy_check_reuses_resident_reference_and_checks_accounting(self):
         base = {
             "input_ids": [1],

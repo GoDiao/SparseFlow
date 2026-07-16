@@ -14,6 +14,8 @@ from .expert_provider import (
     ResidentExpertProvider,
     StreamingExpertProvider,
 )
+from .int8_container import Int8ExpertIndex
+from .int8_provider import Int8ResidentExpertProvider, Int8StreamingExpertProvider
 from .loader import ShardReader
 from .locator import ExpertLocator
 from .memory_loader import (
@@ -30,6 +32,7 @@ RUNTIME_ID = "qwen36-text-memory-native-v1"
 EXPERT_MODULE_ID = "SparseFlowQwenExperts-v1"
 DISPATCH_ID = "qwen36-topk-index-add-v1"
 KERNEL_ID = "bf16-linear-silu-linear-eager-v1"
+INT8_REFERENCE_KERNEL_ID = "int8-per-channel-dequant-bf16-linear-silu-linear-v1"
 
 
 def _provider_counters(provider: ExpertProvider) -> dict[str, Any]:
@@ -156,6 +159,7 @@ class Qwen36TextRuntime:
         prefetch_workers: int = 0,
         experts_implementation: str = "eager",
         load_mode: str = "transformers",
+        expert_storage: str = "bf16",
         loader_report: dict[str, Any] | None = None,
     ):
         if mode not in {"resident", "streaming"}:
@@ -173,6 +177,10 @@ class Qwen36TextRuntime:
         self.prefetch_workers = prefetch_workers
         self.experts_implementation = experts_implementation
         self.load_mode = load_mode
+        self.expert_storage = expert_storage
+        self.kernel_id = (
+            INT8_REFERENCE_KERNEL_ID if expert_storage == "int8-reference" else KERNEL_ID
+        )
         self.loader_report = loader_report
         self._router_hook_handles = self._attach_router_timing_hooks()
 
@@ -194,6 +202,8 @@ class Qwen36TextRuntime:
         telemetry_level: str = "summary",
         experts_implementation: str | None = None,
         load_mode: str = "transformers",
+        expert_storage: str = "bf16",
+        int8_container: str | Path | None = None,
     ) -> "Qwen36TextRuntime":
         import torch
         from transformers import AutoModelForImageTextToText, AutoTokenizer
@@ -214,6 +224,20 @@ class Qwen36TextRuntime:
             raise ValueError("SparseFlow streaming currently implements eager expert arithmetic")
         if load_mode == "memory-native" and mode == "resident" and prefetch_workers:
             raise ValueError("resident expert backend does not support prefetch workers")
+        if expert_storage not in {"bf16", "int8-reference"}:
+            raise ValueError("expert_storage must be bf16 or int8-reference")
+        if expert_storage == "int8-reference":
+            if load_mode != "memory-native":
+                raise ValueError("INT8 reference experts require memory-native loading")
+            if int8_container is None:
+                raise ValueError("INT8 reference experts require int8_container")
+            if prefetch_workers:
+                raise ValueError("INT8 reference provider does not implement prefetch yet")
+            int8_root = Path(int8_container).expanduser().resolve()
+            int8_index = Int8ExpertIndex.from_dir(int8_root)
+        else:
+            int8_root = None
+            int8_index = None
         if not 0.0 <= hot_ratio <= 1.0:
             raise ValueError("hot_ratio must be in [0, 1]")
         if not 0.0 <= prefetch_budget_ratio <= 1.0:
@@ -237,7 +261,17 @@ class Qwen36TextRuntime:
                         cache_slots = 16
                     policy = make_cache_policy(
                         cache_policy,
-                        _max_hot_entries(root, cache_slots, cache_bytes, hot_ratio),
+                        _max_hot_entries(
+                            root,
+                            cache_slots,
+                            cache_bytes,
+                            hot_ratio,
+                            expert_bytes=(
+                                int8_index.locate(int8_index.layers[0], 0).nbytes
+                                if int8_index is not None
+                                else None
+                            ),
+                        ),
                     )
                     cache = ExpertCache(
                         capacity_per_layer=cache_slots,
@@ -245,18 +279,27 @@ class Qwen36TextRuntime:
                         policy=policy,
                         collect_timings=telemetry_level == "layer",
                     )
-                    provider = StreamingExpertProvider(
-                        root,
-                        cache,
-                        reader,
-                        torch,
-                        prefetch_workers=prefetch_workers,
-                        coalesce_gap=coalesce_gap,
-                        prefetch_policy=prefetch_policy,
-                        prefetch_budget_ratio=prefetch_budget_ratio,
-                    )
+                    if expert_storage == "int8-reference":
+                        provider = Int8StreamingExpertProvider(
+                            int8_root, cache, reader, torch
+                        )
+                    else:
+                        provider = StreamingExpertProvider(
+                            root,
+                            cache,
+                            reader,
+                            torch,
+                            prefetch_workers=prefetch_workers,
+                            coalesce_gap=coalesce_gap,
+                            prefetch_policy=prefetch_policy,
+                            prefetch_budget_ratio=prefetch_budget_ratio,
+                        )
                 else:
-                    provider = ResidentExpertProvider(root, reader, torch)
+                    provider = (
+                        Int8ResidentExpertProvider(int8_root, torch)
+                        if expert_storage == "int8-reference"
+                        else ResidentExpertProvider(root, reader, torch)
+                    )
                 route_audit = RouteAudit()
                 telemetry = RuntimeTelemetry(telemetry_level)
                 build = build_qwen36_meta_text_model(
@@ -293,6 +336,7 @@ class Qwen36TextRuntime:
                 prefetch_workers=prefetch_workers,
                 experts_implementation="eager",
                 load_mode="memory-native",
+                expert_storage=expert_storage,
                 loader_report=loader_report,
             )
 
@@ -573,8 +617,9 @@ class Qwen36TextRuntime:
                 "runtime_id": RUNTIME_ID if self.load_mode == "memory-native" else "transformers-reference",
                 "expert_module_id": EXPERT_MODULE_ID if self.provider is not None else "transformers-experts",
                 "dispatch_id": DISPATCH_ID if self.provider is not None else "transformers-dispatch",
-                "kernel_id": KERNEL_ID if self.provider is not None else self.experts_implementation,
+                "kernel_id": self.kernel_id if self.provider is not None else self.experts_implementation,
             },
+            "expert_storage": self.expert_storage,
             "prompt": prompt,
             "input_ids": input_ids[0].tolist(),
             "generated_ids": generated_ids[0].tolist(),
@@ -635,13 +680,15 @@ def _max_hot_entries(
     cache_slots: int | None,
     cache_bytes: int | None,
     hot_ratio: float,
+    expert_bytes: int | None = None,
 ) -> int:
     if hot_ratio <= 0.0:
         return 0
     locator = ExpertLocator(model_dir)
     if cache_bytes is not None:
-        first_layer = locator.layers[0]
-        expert_bytes = locator.locate(first_layer, 0).nbytes
+        if expert_bytes is None:
+            first_layer = locator.layers[0]
+            expert_bytes = locator.locate(first_layer, 0).nbytes
         total_entries = cache_bytes // expert_bytes
     elif cache_slots is not None:
         total_entries = cache_slots * len(locator.layers)
@@ -894,6 +941,130 @@ def compare_sparseflow_runtime_paths(
     }
 
 
+def compare_int8_reference_paths(
+    model_dir: str | Path,
+    int8_container: str | Path,
+    prompt: str,
+    max_new_tokens: int = 4,
+    cache_bytes: int = 4 * 1024**3,
+    cache_policy: str = "lru",
+    telemetry_level: str = "summary",
+) -> dict[str, Any]:
+    """Compare INT8 resident/streaming storage with one reference kernel."""
+
+    if not prompt.strip():
+        raise ValueError("prompt must not be empty")
+    if max_new_tokens < 1:
+        raise ValueError("max_new_tokens must be positive")
+    if cache_bytes <= 0:
+        raise ValueError("INT8 reference check requires a positive cache budget")
+    root = Path(model_dir).expanduser().resolve()
+    container = Path(int8_container).expanduser().resolve()
+    int8_index = Int8ExpertIndex.from_dir(container)
+
+    resident, resident_load_seconds = _run_text_path(
+        root,
+        prompt,
+        max_new_tokens,
+        mode="resident",
+        dtype="bf16",
+        experts_implementation="eager",
+        load_mode="memory-native",
+        expert_storage="int8-reference",
+        int8_container=container,
+        telemetry_level=telemetry_level,
+    )
+    gc.collect()
+    streaming, streaming_load_seconds = _run_text_path(
+        root,
+        prompt,
+        max_new_tokens,
+        mode="streaming",
+        dtype="bf16",
+        cache_slots=None,
+        cache_bytes=cache_bytes,
+        experts_implementation="eager",
+        load_mode="memory-native",
+        expert_storage="int8-reference",
+        int8_container=container,
+        cache_policy=cache_policy,
+        prefetch_policy="none",
+        telemetry_level=telemetry_level,
+    )
+
+    correctness = compare_generation_results(resident, streaming)
+    route_audit_equal = resident["route_audit"] == streaming["route_audit"]
+    identity_equal = resident["runtime_identity"] == streaming["runtime_identity"]
+    resident_storage = resident["provider_storage"]
+    resident_reads = _reader_delta(
+        resident["storage_phases"]["before_prefill"],
+        resident["storage_phases"]["after_generation"],
+    )
+    streaming_reads = _reader_delta(
+        streaming["storage_phases"]["before_prefill"],
+        streaming["storage_phases"]["after_generation"],
+    )
+    provider = streaming["storage_phases"]["after_generation"]
+    demand_accounted = provider["demand_requests"] == (
+        provider["demand_reuse_hits"]
+        + provider["demand_prefetch_served"]
+        + provider["demand_misses"]
+    )
+    expected_resident_bytes = int(int8_index.manifest["physical_bytes"])
+    invariants = {
+        "same_runtime_identity": identity_equal,
+        "same_route_audit": route_audit_equal,
+        "full_generation_exact": correctness["all_equal"],
+        "resident_all_experts_loaded": (
+            resident_storage["resident_layers"] == len(int8_index.layers)
+            and resident_storage["resident_experts"]
+            == len(int8_index.layers) * int8_index.num_experts
+        ),
+        "resident_payload_exact": resident_storage["resident_bytes"]
+        == expected_resident_bytes,
+        "resident_generation_zero_expert_io": resident_reads["read_bytes"] == 0,
+        "streaming_init_zero_expert_io": (
+            streaming["loader"]["expert_reader_calls_after_init"] == 0
+            and streaming["loader"]["expert_reader_bytes_after_init"] == 0
+        ),
+        "streaming_generation_reads_experts": streaming_reads["read_bytes"] > 0,
+        "cache_budget_respected": provider["cached_bytes"] <= cache_bytes,
+        "demand_accounting_exact": demand_accounted,
+    }
+    return {
+        "schema_version": 1,
+        "kind": "qwen3_5_stage7_5_int8_reference_correctness",
+        "stage": "7.5.3",
+        "agent": "Main Dev",
+        "model": str(root),
+        "int8_container": str(container),
+        "prompt": prompt,
+        "max_new_tokens": max_new_tokens,
+        "cache_bytes": cache_bytes,
+        "runtime_identity": resident["runtime_identity"],
+        "resident": {
+            **resident,
+            "load_seconds": resident_load_seconds,
+            "generation_expert_io": resident_reads,
+        },
+        "streaming": {
+            **streaming,
+            "load_seconds": streaming_load_seconds,
+            "generation_expert_io": streaming_reads,
+        },
+        "correctness": {
+            **correctness,
+            "route_audit_equal": route_audit_equal,
+            "runtime_identity_equal": identity_equal,
+        },
+        "invariants": invariants,
+        "all_invariants_pass": all(invariants.values()),
+        "boundary": (
+            "INT8 resident and streaming use identical canonical quantized weights, "
+            "per-output FP16 scales, reference dequant-to-BF16, routed dispatch, "
+            "BF16 expert kernel, attention/DeltaNet, KV cache, and greedy loop."
+        ),
+    }
 def compare_sparseflow_policy_paths(
     model_dir: str | Path,
     prompt: str,
@@ -1062,6 +1233,8 @@ def _run_text_path(
     prefetch_budget_ratio: float = 0.25,
     hot_ratio: float = 0.25,
     telemetry_level: str = "summary",
+    expert_storage: str = "bf16",
+    int8_container: str | Path | None = None,
 ) -> tuple[dict[str, Any], float]:
     load_started = time.perf_counter()
     runtime = Qwen36TextRuntime.from_pretrained(
@@ -1079,6 +1252,8 @@ def _run_text_path(
         prefetch_budget_ratio=prefetch_budget_ratio,
         hot_ratio=hot_ratio,
         telemetry_level=telemetry_level,
+        expert_storage=expert_storage,
+        int8_container=int8_container,
     )
     load_seconds = time.perf_counter() - load_started
     try:

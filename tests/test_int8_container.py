@@ -9,12 +9,18 @@ from pathlib import Path
 import torch
 
 from sparseflow.cli import main
+from sparseflow.cache import ExpertCache
 from sparseflow.int8_container import (
     ALIGNMENT,
     Int8ExpertIndex,
     convert_experts_int8,
     dequantize_part,
 )
+from sparseflow.int8_provider import (
+    Int8ResidentExpertProvider,
+    Int8StreamingExpertProvider,
+)
+from sparseflow.loader import ShardReader
 
 
 def write_fixture(root: Path) -> dict[tuple[int, str], torch.Tensor]:
@@ -91,6 +97,28 @@ class Int8ContainerTest(unittest.TestCase):
             resumed = convert_experts_int8(model, output, resume=True)
             self.assertEqual(resumed["converted_layers"], 0)
             self.assertEqual(resumed["resumed_layers"], 1)
+
+            resident = Int8ResidentExpertProvider(output, torch)
+            reader = ShardReader()
+            streaming = Int8StreamingExpertProvider(
+                output,
+                ExpertCache(max_bytes=location.nbytes),
+                reader,
+                torch,
+            )
+            try:
+                for expert in (0, 1, 0):
+                    left = resident.get(0, expert)
+                    right = streaming.get(0, expert)
+                    for part_name in ("gate_up_proj", "down_proj"):
+                        self.assertTrue(torch.equal(left[part_name], right[part_name]))
+                self.assertEqual(streaming.counters()["demand_requests"], 3)
+                self.assertGreater(streaming.counters()["demand_misses"], 0)
+                self.assertLessEqual(streaming.counters()["cached_bytes"], location.nbytes)
+            finally:
+                resident.close()
+                streaming.close()
+                reader.close()
 
     def test_cli_converts_selected_layers(self):
         with tempfile.TemporaryDirectory() as temp:
