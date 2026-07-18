@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_6_formal_summary",
+  "stage": "7.6.7",
+  "agent": "Main Dev",
+  "benchmark_commit": "0d4bdf9c847da30e297c80d793f1f59ed3a90fe3",
+  "protocol": {
+    "threads": 10,
+    "prompt": "core-zh-moe",
+    "generated_tokens": 32,
+    "warm_runs": 3,
+    "warmup_runs": 1,
+    "model_cold_replicates": 3,
+    "expert_storage": "canonical-int8-v1",
+    "dispatch": "qwen36-native-grouped-prefill-canonical-decode-v1"
+  },
+  "correctness": {
+    "resident_streaming_full_logits_exact": true,
+    "route_audit_exact": true,
+    "generated_ids_exact": true,
+    "cache_budget_respected": true,
+    "demand_accounting_exact": true,
+    "resident_generation_expert_io_bytes": 0,
+    "streaming_leases_released": true,
+    "execution_metadata_resident_bytes": 125992960
+  },
+  "profile_decisions": {
+    "fused_decode": {
+      "decision": "no-go as default",
+      "paired_median_speedup": 0.8860208497788161,
+      "reason": "The fused routed kernel was faster in isolation but reduced full-runtime decode throughput."
+    },
+    "grouped_prefill": {
+      "decision": "go",
+      "resident_ttft_seconds": 6.090496771999824,
+      "stage7_5_ttft_seconds": 8.25
+    },
+    "hybrid_dispatch": {
+      "decision": "default",
+      "paired_median_decode_ratio_vs_legacy": 0.980250711150451,
+      "all_pairs_exact": true
+    },
+    "lm_head": {
+      "decision": "no-go",
+      "approximate_decode_wall_share": 0.05
+    },
+    "deterministic_io_pipeline": {
+      "decision": "no-go by default",
+      "synchronous_fused_tok_s": 1.2060877263512493,
+      "pipeline_tok_s": 0.899429549759809,
+      "outputs_exact": true
+    },
+    "deltanet_projection_fusion": {
+      "decision": "no-go by default",
+      "reason": "Measured component-level savings were below the 15% expected-gain gate."
+    }
+  },
+  "observer_effect": {
+    "none_median_tok_s": 2.119737038373564,
+    "summary_median_tok_s": 2.1910808301694975,
+    "median_paired_delta": 0.026698779359520586,
+    "median_slowdown": 0.0,
+    "absolute_one_percent_effect_resolved": false,
+    "profile_critical_path_closure": 0.9894306272911033,
+    "all_outputs_exact": true,
+    "required_gate_pass": true
+  },
+  "performance": {
+    "resident_warm": {
+      "decode_tok_s": 2.1512870565590845,
+      "ttft_seconds": 6.090496771999824,
+      "peak_rss_bytes": 39329984512,
+      "stage7_5_decode_tok_s": 2.4925,
+      "decode_delta_ratio": -0.13689586497128015,
+      "goal_tok_s": 3.25,
+      "goal_met": false
+    },
+    "streaming_4g_warm": {
+      "decode_tok_s": 1.4127687753733376,
+      "ttft_seconds": 12.36107242899925,
+      "peak_rss_bytes": 10595069952,
+      "provider_read_bytes": 22293190656,
+      "stage7_5_decode_tok_s": 1.0981435271302264,
+      "decode_delta_ratio": 0.28650649070099983,
+      "goal_tok_s": 1.32,
+      "goal_met": true
+    },
+    "streaming_8g_warm": {
+      "decode_tok_s": 1.4944023505902995,
+      "ttft_seconds": 12.460237809998944,
+      "peak_rss_bytes": 14970941440,
+      "provider_read_bytes": 14857924608,
+      "stage7_5_decode_tok_s": 1.41571867968223,
+      "decode_delta_ratio": 0.0555786061435104,
+      "goal_tok_s": 1.77,
+      "goal_met": false
+    },
+    "streaming_4g_model_cold": {
+      "decode_samples_tok_s": [
+        1.0188964277087207,
+        1.0226919428369405,
+        1.0315197150950177
+      ],
+      "median_decode_tok_s": 1.0226919428369405,
+      "median_ttft_seconds": 57.10153508199983,
+      "provider_read_bytes_per_run": 22860527616,
+      "process_read_bytes_per_run": 16506380288,
+      "stage7_5_median_decode_tok_s": 0.8632,
+      "decode_delta_ratio": 0.1847682377629061,
+      "goal_tok_s": 1.0,
+      "goal_met": true
+    }
+  },
+  "required_gates": {
+    "full_correctness": true,
+    "native_abi_and_leases": true,
+    "offline_row_sums": true,
+    "grouped_prefill": true,
+    "profile_gated_no_go_decisions_recorded": true,
+    "observer_slowdown_within_one_percent": true,
+    "clean_commit_performance_matrix": true,
+    "three_model_cold_replicates": true,
+    "all_formal_outputs_exact": true,
+    "stage_complete": true
+  }
+}

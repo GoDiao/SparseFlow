@@ -323,6 +323,32 @@ warm 和三次 final model-cold。W8A8 native 4/8 GiB 正式 decode 为
 resident/streaming 的每个 choice/token log-likelihood exact。所有正式验收项
 通过。结果见 `docs/results/qwen36_stage7_5_6_formal_20260716.md`。[Main Dev]
 
+### Phase 7.6 status: native decode critical path complete
+
+Stage 7.6 was intentionally scoped to profile-proven critical paths rather than
+rewriting the complete Qwen text runtime. Operator-level profiling, native
+cache leases, offline row sums, a stable `NativeExpertBatch` ABI, fused grouped
+prefill, canonical batch-one decode dispatch, summary-telemetry cleanup and
+formal warm/cold benchmarks are complete. [Main Dev]
+
+Pure fused decode was rejected as the default after same-process AB/BA measured
+`0.886x` legacy throughput despite a faster routed-expert microkernel. The final
+hybrid runtime uses grouped native prefill and canonical W8A8 decode. The real
+32-token resident/streaming gate retained exact full logits, routes, IDs, cache
+budget, I/O accounting and zero remaining leases. [Main Dev]
+
+On clean commit `0d4bdf9`, hybrid S1 reached `1.4128 tok/s` at 4 GiB warm and
+`1.0227 tok/s` for the three-run model-cold median, improvements of 28.7% and
+18.5% over Stage 7.5. The 8 GiB path improved 5.6% to `1.4944 tok/s`. Resident
+decode did not improve under the final host thermal state, so no resident gain
+is claimed. lm_head, deterministic I/O overlap and DeltaNet projection fusion
+were recorded as profile-gated no-go decisions. Full evidence is in
+`docs/results/qwen36_stage7_6_native_critical_path_20260718.md`. [Main Dev]
+
+The next phase may introduce native generation/session ownership and a
+multi-request scheduler. Attention/DeltaNet rewrites remain out of scope unless
+new profiling crosses the component and expected-gain gates. [Main Dev]
+
 ## Early Non-goals
 
 - 阶段 6 暂不支持 vision 输入、MTP/speculative decoding 和生产级 serving。
