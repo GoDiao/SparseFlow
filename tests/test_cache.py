@@ -11,6 +11,7 @@ from sparseflow.cache import ExpertCache
 from sparseflow.cache_policy import make_cache_policy
 from sparseflow.loader import ShardReader
 from sparseflow.locator import ExpertLocator
+from sparseflow.native_moe import prepare_native_expert_batch
 from sparseflow.trace import load_route_trace
 from sparseflow.policy_benchmark import run_policy_replay
 from sparseflow.trace import RouteTrace, TraceGroup
@@ -79,6 +80,78 @@ class ExpertCacheTest(unittest.TestCase):
 
         self.assertEqual(evicted, [first])
         self.assertEqual(cache.entries, 1)
+
+    def test_lease_keeps_backing_entry_stable_until_release(self):
+        evicted = []
+        cache = ExpertCache(max_bytes=2)
+        cache.add_eviction_listener(evicted.append)
+        first = cache.put_loaded(0, 0, {"weight": b"aa"})
+        lease = cache.lease(first, references=(object(),))
+
+        transient = cache.put_loaded(0, 1, {"weight": b"bb"})
+        self.assertIs(cache.peek(0, 0), first)
+        self.assertIsNone(cache.peek(0, 1))
+        self.assertEqual(cache.pinned_entries, 1)
+        self.assertEqual(cache.pinned_bytes, 2)
+        self.assertEqual(evicted, [])
+        self.assertEqual(transient.expert_id, 1)
+
+        lease.release()
+        cache.put_loaded(0, 1, {"weight": b"bb"})
+        self.assertIsNone(cache.peek(0, 0))
+        self.assertIsNotNone(cache.peek(0, 1))
+        self.assertEqual(evicted, [first])
+
+    def test_clear_rejects_active_lease(self):
+        cache = ExpertCache(max_bytes=2)
+        entry = cache.put_loaded(0, 0, {"weight": b"aa"})
+        lease = cache.lease(entry)
+        with self.assertRaisesRegex(RuntimeError, "leases are active"):
+            cache.clear()
+        lease.release()
+        cache.clear()
+
+    def test_native_batch_releases_provider_leases_on_success_and_failure(self):
+        cache = ExpertCache(max_bytes=4)
+        entries = {
+            expert_id: cache.put_loaded(0, expert_id, {"weight": bytes([expert_id])})
+            for expert_id in (0, 1)
+        }
+        results = {
+            expert_id: {
+                "gate_up_proj": {"native_int8": True, "expert_id": expert_id},
+                "down_proj": None,
+            }
+            for expert_id in (0, 1)
+        }
+
+        class Provider:
+            def __init__(self):
+                self.cache = cache
+                self._decoded = {
+                    (0, expert_id): (entries[expert_id], results[expert_id])
+                    for expert_id in (0, 1)
+                }
+                self.fail_on = None
+
+            def prepare(self, _layer, _expert_ids):
+                pass
+
+            def get(self, _layer, expert_id):
+                if expert_id == self.fail_on:
+                    raise RuntimeError("injected provider failure")
+                return results[expert_id]
+
+        provider = Provider()
+        with prepare_native_expert_batch(provider, 0, (0, 1)) as batch:
+            self.assertEqual(cache.pinned_entries, 2)
+            self.assertEqual([item["expert_id"] for item in batch.weights], [0, 1])
+        self.assertEqual(cache.pinned_entries, 0)
+
+        provider.fail_on = 1
+        with self.assertRaisesRegex(RuntimeError, "injected provider failure"):
+            prepare_native_expert_batch(provider, 0, (0, 1))
+        self.assertEqual(cache.pinned_entries, 0)
 
     def test_no_cache_policy_rejects_admission_under_nonzero_budget(self):
         cache = ExpertCache(max_bytes=16, policy=make_cache_policy("none"))

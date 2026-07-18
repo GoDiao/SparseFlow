@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import hashlib
 import time
+import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,9 @@ from .telemetry import RuntimeTelemetry
 
 RUNTIME_ID = "qwen36-text-memory-native-v1"
 EXPERT_MODULE_ID = "SparseFlowQwenExperts-v1"
-DISPATCH_ID = "qwen36-topk-index-add-v1"
+DISPATCH_ID = "qwen36-topk-canonical-v2"
+FUSED_DISPATCH_ID = "qwen36-native-fused-moe-v1"
+HYBRID_DISPATCH_ID = "qwen36-native-grouped-prefill-canonical-decode-v1"
 KERNEL_ID = "bf16-linear-silu-linear-eager-v1"
 INT8_REFERENCE_KERNEL_ID = "int8-per-channel-dequant-bf16-linear-silu-linear-v1"
 INT8_NATIVE_KERNEL_ID = "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
@@ -90,39 +93,73 @@ class SparseFlowQwenExperts(_Module):
         provider: ExpertProvider,
         route_audit: RouteAudit,
         telemetry: RuntimeTelemetry | None = None,
+        native_dispatch: str = "legacy",
     ):
         super().__init__()
         self.layer = layer
         self.provider = provider
         self.route_audit = route_audit
         self.telemetry = telemetry or RuntimeTelemetry("none")
+        self.native_dispatch = native_dispatch
 
-    def forward(self, hidden_states, top_k_index, top_k_weights):
-        self.route_audit.record(self.layer, top_k_index)
-        self.provider.observe_routes(self.layer, top_k_index)
-        if self.telemetry.level == "none":
-            return run_routed_experts(
+    def _run(self, hidden_states, top_k_index, top_k_weights, timing_callback=None):
+        if self.native_dispatch == "fused" or (
+            self.native_dispatch == "hybrid" and hidden_states.shape[0] > 1
+        ):
+            from .native_moe import run_fused_native_moe
+
+            return run_fused_native_moe(
                 hidden_states,
                 top_k_index,
                 top_k_weights,
-                lambda expert_id: self.provider.get(self.layer, expert_id),
-                prepare_routed=lambda expert_ids: self.provider.prepare(
-                    self.layer, expert_ids
-                ),
+                self.provider,
+                self.layer,
+                timing_callback=timing_callback,
             )
-        before = _provider_counters(self.provider)
-        started = time.perf_counter()
-        result = run_routed_experts(
+        return run_routed_experts(
             hidden_states,
             top_k_index,
             top_k_weights,
             lambda expert_id: self.provider.get(self.layer, expert_id),
             prepare_routed=lambda expert_ids: self.provider.prepare(self.layer, expert_ids),
+            timing_callback=timing_callback,
+        )
+
+    def forward(self, hidden_states, top_k_index, top_k_weights):
+        self.route_audit.record(self.layer, top_k_index)
+        self.provider.observe_routes(self.layer, top_k_index)
+        if self.telemetry.level == "none":
+            return self._run(hidden_states, top_k_index, top_k_weights)
+        if self.telemetry.level == "summary":
+            result = self._run(hidden_states, top_k_index, top_k_weights)
+            self.telemetry.record_summary_layer(top_k_index)
+            return result
+        before = _provider_counters(self.provider)
+        native_before = None
+        if self.telemetry.level == "profile" and getattr(self.provider, "native", False):
+            from .native_int8 import native_profile_snapshot
+
+            native_before = native_profile_snapshot()
+        started = time.perf_counter()
+        result = self._run(
+            hidden_states,
+            top_k_index,
+            top_k_weights,
             timing_callback=(
-                self.telemetry.add_timing if self.telemetry.level == "layer" else None
+                self.telemetry.add_timing
+                if self.telemetry.level in {"profile", "layer"}
+                else None
             ),
         )
         elapsed_ms = (time.perf_counter() - started) * 1000.0
+        self.telemetry.add_timing("routed_experts", elapsed_ms)
+        if native_before is not None:
+            from .native_int8 import native_profile_delta, native_profile_snapshot
+
+            for category, milliseconds in native_profile_delta(
+                native_before, native_profile_snapshot()
+            ).items():
+                self.telemetry.add_timing(category, milliseconds)
         self.telemetry.record_layer(
             self.layer,
             top_k_index,
@@ -131,6 +168,77 @@ class SparseFlowQwenExperts(_Module):
             elapsed_ms,
         )
         return result
+
+
+class SparseFlowPipelinedMoeBlock(_Module):
+    """Submit deterministic current-layer misses while shared expert runs."""
+
+    def __init__(self, source):
+        super().__init__()
+        self.shared_expert = source.shared_expert
+        self.gate = source.gate
+        self.experts = source.experts
+        self.shared_expert_gate = source.shared_expert_gate
+
+    def forward(self, hidden_states):
+        import torch.nn.functional as functional
+
+        batch_size, sequence_length, hidden_dim = hidden_states.shape
+        flattened = hidden_states.view(-1, hidden_dim)
+        _, routing_weights, selected_experts = self.gate(flattened)
+        expert_ids = tuple(
+            int(value) for value in selected_experts.unique(sorted=True).tolist()
+        )
+        self.experts.provider.prepare(self.experts.layer, expert_ids)
+        shared_output = self.shared_expert(flattened)
+        expert_output = self.experts(flattened, selected_experts, routing_weights)
+        shared_output = functional.sigmoid(self.shared_expert_gate(flattened)) * shared_output
+        return (expert_output + shared_output).reshape(
+            batch_size, sequence_length, hidden_dim
+        )
+
+
+class _FusedDeltaNetProjectionBank(_Module):
+    def __init__(self, projections):
+        super().__init__()
+        if any(module.bias is not None for module in projections):
+            raise ValueError("DeltaNet projection fusion requires bias-free linears")
+        self.sizes = tuple(int(module.weight.shape[0]) for module in projections)
+        self.register_buffer(
+            "weight",
+            __import__("torch").cat([module.weight.detach() for module in projections], dim=0),
+            persistent=False,
+        )
+        self._input_identity: int | None = None
+        self._outputs = None
+
+    def take(self, hidden_states, index: int):
+        import torch.nn.functional as functional
+
+        if index == 0:
+            projected = functional.linear(hidden_states, self.weight)
+            self._outputs = projected.split(self.sizes, dim=-1)
+            self._input_identity = id(hidden_states)
+        elif self._outputs is None or self._input_identity != id(hidden_states):
+            raise RuntimeError("DeltaNet fused projections were consumed out of order")
+        result = self._outputs[index]
+        if index == len(self.sizes) - 1:
+            self._outputs = None
+            self._input_identity = None
+        return result
+
+
+class _FusedDeltaNetProjectionView(_Module):
+    def __init__(self, bank: _FusedDeltaNetProjectionBank, index: int):
+        super().__init__()
+        self._bank_ref = weakref.ref(bank)
+        self.index = index
+
+    def forward(self, hidden_states):
+        bank = self._bank_ref()
+        if bank is None:
+            raise RuntimeError("DeltaNet fused projection bank was released")
+        return bank.take(hidden_states, self.index)
 
 
 class Qwen36TextRuntime:
@@ -162,6 +270,9 @@ class Qwen36TextRuntime:
         load_mode: str = "transformers",
         expert_storage: str = "bf16",
         loader_report: dict[str, Any] | None = None,
+        native_dispatch: str = "legacy",
+        deterministic_io_pipeline: bool = False,
+        fuse_deltanet_projections: bool = False,
     ):
         if mode not in {"resident", "streaming"}:
             raise ValueError("mode must be resident or streaming")
@@ -175,6 +286,9 @@ class Qwen36TextRuntime:
         self.provider = provider
         self.route_audit = route_audit
         self.telemetry = telemetry or RuntimeTelemetry("none")
+        self._native_profile_enabled = (
+            self.telemetry.level == "profile" and expert_storage == "int8-native"
+        )
         self.prefetch_workers = prefetch_workers
         self.experts_implementation = experts_implementation
         self.load_mode = load_mode
@@ -185,7 +299,15 @@ class Qwen36TextRuntime:
             "int8-native": INT8_NATIVE_KERNEL_ID,
         }[expert_storage]
         self.loader_report = loader_report
+        self.native_dispatch = native_dispatch
+        self.deterministic_io_pipeline = deterministic_io_pipeline
+        if deterministic_io_pipeline:
+            self._install_deterministic_io_pipeline()
+        self.fuse_deltanet_projections = fuse_deltanet_projections
+        if fuse_deltanet_projections:
+            self._install_fused_deltanet_projections()
         self._router_hook_handles = self._attach_router_timing_hooks()
+        self._component_hook_handles = self._attach_component_timing_hooks()
 
     @classmethod
     def from_pretrained(
@@ -207,6 +329,9 @@ class Qwen36TextRuntime:
         load_mode: str = "transformers",
         expert_storage: str = "bf16",
         int8_container: str | Path | None = None,
+        native_dispatch: str = "legacy",
+        deterministic_io_pipeline: bool = False,
+        fuse_deltanet_projections: bool = False,
     ) -> "Qwen36TextRuntime":
         import torch
         from transformers import AutoModelForImageTextToText, AutoTokenizer
@@ -229,6 +354,20 @@ class Qwen36TextRuntime:
             raise ValueError("resident expert backend does not support prefetch workers")
         if expert_storage not in {"bf16", "int8-reference", "int8-native"}:
             raise ValueError("expert_storage must be bf16, int8-reference, or int8-native")
+        if native_dispatch not in {"legacy", "fused", "hybrid"}:
+            raise ValueError("native_dispatch must be legacy, fused, or hybrid")
+        if native_dispatch in {"fused", "hybrid"} and expert_storage != "int8-native":
+            raise ValueError("fused/hybrid native dispatch requires int8-native expert storage")
+        if deterministic_io_pipeline and (
+            mode != "streaming"
+            or native_dispatch != "fused"
+            or prefetch_workers <= 0
+            or prefetch_policy != "current-route"
+        ):
+            raise ValueError(
+                "deterministic I/O pipeline requires streaming fused dispatch with "
+                "current-route prefetch workers"
+            )
         if expert_storage in {"int8-reference", "int8-native"}:
             if load_mode != "memory-native":
                 raise ValueError("INT8 experts require memory-native loading")
@@ -256,7 +395,13 @@ class Qwen36TextRuntime:
             reader = ShardReader()
             cache = None
             provider: ExpertProvider | None = None
+            native_profile_enabled = False
             try:
+                if expert_storage == "int8-native" and telemetry_level == "profile":
+                    from .native_int8 import set_native_profile
+
+                    set_native_profile(True)
+                    native_profile_enabled = True
                 if mode == "streaming":
                     if cache_slots is None and cache_bytes is None:
                         cache_slots = 16
@@ -278,7 +423,7 @@ class Qwen36TextRuntime:
                         capacity_per_layer=cache_slots,
                         max_bytes=cache_bytes,
                         policy=policy,
-                        collect_timings=telemetry_level == "layer",
+                        collect_timings=telemetry_level in {"profile", "layer"},
                     )
                     if expert_storage in {"int8-reference", "int8-native"}:
                         provider = Int8StreamingExpertProvider(
@@ -322,6 +467,7 @@ class Qwen36TextRuntime:
                         provider,
                         route_audit,
                         telemetry,
+                        native_dispatch=native_dispatch,
                     ),
                 )
                 materialized = materialize_qwen36_text_model(build, dtype=dtype)
@@ -329,29 +475,45 @@ class Qwen36TextRuntime:
                 if provider is not None:
                     provider.close()
                 reader.close()
+                if native_profile_enabled:
+                    from .native_int8 import set_native_profile
+
+                    set_native_profile(False)
                 raise
             assert provider is not None
             loader_report = materialized.as_dict()
             loader_report["expert_reader_calls_after_init"] = reader.read_calls
             loader_report["expert_reader_bytes_after_init"] = reader.read_bytes
             loader_report["expert_provider"] = provider.storage_report()
-            return cls(
-                materialized.model,
-                tokenizer,
-                torch,
-                root,
-                mode=mode,
-                reader=reader,
-                cache=cache,
-                provider=provider,
-                route_audit=route_audit,
-                telemetry=telemetry,
-                prefetch_workers=prefetch_workers,
-                experts_implementation="eager",
-                load_mode="memory-native",
-                expert_storage=expert_storage,
-                loader_report=loader_report,
-            )
+            try:
+                return cls(
+                    materialized.model,
+                    tokenizer,
+                    torch,
+                    root,
+                    mode=mode,
+                    reader=reader,
+                    cache=cache,
+                    provider=provider,
+                    route_audit=route_audit,
+                    telemetry=telemetry,
+                    prefetch_workers=prefetch_workers,
+                    experts_implementation="eager",
+                    load_mode="memory-native",
+                    expert_storage=expert_storage,
+                    loader_report=loader_report,
+                    native_dispatch=native_dispatch,
+                    deterministic_io_pipeline=deterministic_io_pipeline,
+                    fuse_deltanet_projections=fuse_deltanet_projections,
+                )
+            except Exception:
+                provider.close()
+                reader.close()
+                if native_profile_enabled:
+                    from .native_int8 import set_native_profile
+
+                    set_native_profile(False)
+                raise
 
         model = AutoModelForImageTextToText.from_pretrained(
             root,
@@ -428,6 +590,35 @@ class Qwen36TextRuntime:
             loader_report={"mode": "transformers-full-then-replace"},
         )
 
+    def _install_deterministic_io_pipeline(self) -> None:
+        text_model = self.model.model
+        layers = (
+            text_model.language_model.layers
+            if hasattr(text_model, "language_model")
+            else text_model.layers
+        )
+        for layer in layers:
+            if not isinstance(layer.mlp, SparseFlowPipelinedMoeBlock):
+                layer.mlp = SparseFlowPipelinedMoeBlock(layer.mlp)
+
+    def _install_fused_deltanet_projections(self) -> None:
+        text_model = self.model.model
+        layers = (
+            text_model.language_model.layers
+            if hasattr(text_model, "language_model")
+            else text_model.layers
+        )
+        names = ("in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a")
+        for layer in layers:
+            module = getattr(layer, "linear_attn", None)
+            if module is None or hasattr(module, "_sparseflow_projection_bank"):
+                continue
+            projections = tuple(getattr(module, name) for name in names)
+            bank = _FusedDeltaNetProjectionBank(projections)
+            module.add_module("_sparseflow_projection_bank", bank)
+            for index, name in enumerate(names):
+                setattr(module, name, _FusedDeltaNetProjectionView(bank, index))
+
     @staticmethod
     def _attach_sparseflow_experts(
         model,
@@ -458,7 +649,7 @@ class Qwen36TextRuntime:
             return "unknown"
 
     def _attach_router_timing_hooks(self):
-        if self.provider is None or self.telemetry.level != "layer":
+        if self.provider is None or self.telemetry.level not in {"profile", "layer"}:
             return []
         language_model = self.model.model
         layers = (
@@ -474,7 +665,7 @@ class Qwen36TextRuntime:
                 continue
 
             def before(_module, _inputs, index=layer_index):
-                if self.telemetry.level == "layer":
+                if self.telemetry.level in {"profile", "layer"}:
                     starts[index] = time.perf_counter()
 
             def after(_module, _inputs, _output, index=layer_index):
@@ -487,6 +678,54 @@ class Qwen36TextRuntime:
 
             handles.append(router.register_forward_pre_hook(before))
             handles.append(router.register_forward_hook(after))
+        return handles
+
+    def _attach_component_timing_hooks(self):
+        """Attach diagnostic-only hooks around stable Qwen decoder boundaries."""
+
+        if self.telemetry.level not in {"profile", "layer"}:
+            return []
+        text_model = self.model.model
+        layers = (
+            text_model.language_model.layers
+            if hasattr(text_model, "language_model")
+            else text_model.layers
+        )
+        handles = []
+        starts: dict[int, list[float]] = {}
+
+        def attach(module, category: str) -> None:
+            if module is None:
+                return
+            key = id(module)
+
+            def before(_module, _inputs):
+                starts.setdefault(key, []).append(time.perf_counter())
+
+            def after(_module, _inputs, _output):
+                stack = starts.get(key)
+                if stack:
+                    self.telemetry.add_timing(
+                        category,
+                        (time.perf_counter() - stack.pop()) * 1000.0,
+                    )
+
+            handles.append(module.register_forward_pre_hook(before))
+            handles.append(module.register_forward_hook(after))
+
+        for layer in layers:
+            attach(layer, "decoder_layer")
+            attach(getattr(layer, "self_attn", None), "attention")
+            attach(getattr(layer, "linear_attn", None), "linear_attention")
+            attach(getattr(layer, "input_layernorm", None), "input_layernorm")
+            attach(getattr(layer, "post_attention_layernorm", None), "post_attention_layernorm")
+            mlp = getattr(layer, "mlp", None)
+            attach(mlp, "moe_block")
+            if mlp is not None:
+                attach(getattr(mlp, "shared_expert", None), "shared_expert")
+                attach(getattr(mlp, "shared_expert_gate", None), "shared_expert_gate")
+        attach(getattr(text_model, "norm", None), "final_norm")
+        attach(getattr(self.model, "lm_head", None), "lm_head")
         return handles
 
     @property
@@ -554,7 +793,13 @@ class Qwen36TextRuntime:
 
         prefill_started = time.perf_counter()
         first = self.prefill(inputs)
+        model_forward_seconds = time.perf_counter() - prefill_started
+        self.telemetry.add_timing("model_forward", model_forward_seconds * 1000.0)
+        argmax_started = time.perf_counter()
         next_token = first.logits[:, -1, :].argmax(dim=-1, keepdim=True)
+        self.telemetry.add_timing(
+            "argmax", (time.perf_counter() - argmax_started) * 1000.0
+        )
         prefill_seconds = time.perf_counter() - prefill_started
         storage_after_prefill = (
             _provider_counters(self.provider) if self.provider is not None else None
@@ -593,10 +838,17 @@ class Qwen36TextRuntime:
             )
             started = time.perf_counter()
             output = self.decode(next_token, attention_mask, past)
-            decode_durations.append(time.perf_counter() - started)
+            model_forward_seconds = time.perf_counter() - started
+            self.telemetry.add_timing("model_forward", model_forward_seconds * 1000.0)
+            decode_durations.append(model_forward_seconds)
             if self.provider is not None:
                 decode_storage.append(_provider_counters(self.provider))
+            loop_started = time.perf_counter()
+            argmax_started = time.perf_counter()
             next_token = output.logits[:, -1, :].argmax(dim=-1, keepdim=True)
+            self.telemetry.add_timing(
+                "argmax", (time.perf_counter() - argmax_started) * 1000.0
+            )
             generated.append(next_token)
             if logit_fingerprints is not None:
                 logit_fingerprints.append(
@@ -612,6 +864,10 @@ class Qwen36TextRuntime:
             past = getattr(output, "past_key_values", None)
             if self.route_audit is not None:
                 previous_decode_routes = self.route_audit.routes_since(decode_route_start)
+            self.telemetry.add_timing(
+                "token_loop_overhead",
+                (time.perf_counter() - loop_started) * 1000.0,
+            )
             if stop_on_eos and eos_id is not None and bool((next_token == eos_id).all()):
                 break
 
@@ -628,6 +884,10 @@ class Qwen36TextRuntime:
         storage_after_generation = (
             _provider_counters(self.provider) if self.provider is not None else None
         )
+        self.telemetry.set_provider_total(
+            storage_before_prefill,
+            storage_after_generation,
+        )
         route_records = (
             self.route_audit.records[route_start:] if self.route_audit is not None else None
         )
@@ -642,7 +902,13 @@ class Qwen36TextRuntime:
             "runtime_identity": {
                 "runtime_id": RUNTIME_ID if self.load_mode == "memory-native" else "transformers-reference",
                 "expert_module_id": EXPERT_MODULE_ID if self.provider is not None else "transformers-experts",
-                "dispatch_id": DISPATCH_ID if self.provider is not None else "transformers-dispatch",
+                "dispatch_id": (
+                    FUSED_DISPATCH_ID
+                    if self.provider is not None and self.native_dispatch == "fused"
+                    else HYBRID_DISPATCH_ID
+                    if self.provider is not None and self.native_dispatch == "hybrid"
+                    else DISPATCH_ID if self.provider is not None else "transformers-dispatch"
+                ),
                 "kernel_id": self.kernel_id if self.provider is not None else self.experts_implementation,
             },
             "expert_storage": self.expert_storage,
@@ -730,12 +996,24 @@ class Qwen36TextRuntime:
     ) -> None:
         if self.provider is not None:
             self.provider.begin_forward(forward, phase)
-        self.telemetry.begin_forward(forward, phase, token_position)
+        self.telemetry.begin_forward(
+            forward,
+            phase,
+            token_position,
+        )
 
     def close(self) -> None:
         for handle in self._router_hook_handles:
             handle.remove()
         self._router_hook_handles.clear()
+        for handle in self._component_hook_handles:
+            handle.remove()
+        self._component_hook_handles.clear()
+        if self._native_profile_enabled:
+            from .native_int8 import set_native_profile
+
+            set_native_profile(False)
+            self._native_profile_enabled = False
         if self.provider is not None:
             self.provider.close()
         if self.reader is not None:
@@ -1027,6 +1305,9 @@ def compare_int8_reference_paths(
     prefetch_policy: str = "none",
     prefetch_budget_ratio: float = 0.10,
     coalesce_gap: int = 0,
+    native_dispatch: str = "legacy",
+    deterministic_io_pipeline: bool = False,
+    fuse_deltanet_projections: bool = False,
 ) -> dict[str, Any]:
     """Compare INT8 resident/streaming storage with one reference kernel."""
 
@@ -1053,6 +1334,9 @@ def compare_int8_reference_paths(
         expert_storage=expert_storage,
         int8_container=container,
         telemetry_level=telemetry_level,
+        native_dispatch=native_dispatch,
+        deterministic_io_pipeline=False,
+        fuse_deltanet_projections=fuse_deltanet_projections,
     )
     gc.collect()
     streaming, streaming_load_seconds = _run_text_path(
@@ -1073,6 +1357,9 @@ def compare_int8_reference_paths(
         prefetch_budget_ratio=prefetch_budget_ratio,
         coalesce_gap=coalesce_gap,
         telemetry_level=telemetry_level,
+        native_dispatch=native_dispatch,
+        deterministic_io_pipeline=deterministic_io_pipeline,
+        fuse_deltanet_projections=fuse_deltanet_projections,
     )
 
     correctness = compare_generation_results(resident, streaming)
@@ -1095,6 +1382,15 @@ def compare_int8_reference_paths(
         + provider["demand_misses"]
     )
     expected_resident_bytes = int(int8_index.manifest["physical_bytes"])
+    expected_execution_bytes = sum(
+        path.stat().st_size for path in getattr(int8_index, "execution_files", ())
+    )
+    reported_weight_bytes = int(
+        resident_storage.get("weight_resident_bytes", resident_storage["resident_bytes"])
+    )
+    reported_execution_bytes = int(
+        resident_storage.get("execution_metadata_resident_bytes", 0)
+    )
     invariants = {
         "same_runtime_identity": identity_equal,
         "same_route_audit": route_audit_equal,
@@ -1104,8 +1400,12 @@ def compare_int8_reference_paths(
             and resident_storage["resident_experts"]
             == len(int8_index.layers) * int8_index.num_experts
         ),
+        "resident_weight_payload_exact": reported_weight_bytes == expected_resident_bytes,
+        "resident_execution_metadata_exact": (
+            reported_execution_bytes == expected_execution_bytes
+        ),
         "resident_payload_exact": resident_storage["resident_bytes"]
-        == expected_resident_bytes,
+        == expected_resident_bytes + expected_execution_bytes,
         "resident_generation_zero_expert_io": resident_reads["read_bytes"] == 0,
         "streaming_init_zero_expert_io": (
             streaming["loader"]["expert_reader_calls_after_init"] == 0
@@ -1116,15 +1416,23 @@ def compare_int8_reference_paths(
         "demand_accounting_exact": demand_accounted,
         "prefetch_failure_free": prefetch is None or prefetch.get("failed", 0) == 0,
         "prefetch_transients_drained": provider["transient_prefetch_entries"] == 0,
+        "streaming_leases_released": provider.get("pinned_entries", 0) == 0,
     }
+    fused = expert_storage == "int8-native" and native_dispatch in {"fused", "hybrid"}
     return {
         "schema_version": 1,
         "kind": (
-            "qwen3_5_stage7_5_int8_native_correctness"
+            "qwen3_5_stage7_6_fused_native_correctness"
+            if fused
+            else "qwen3_5_stage7_5_int8_native_correctness"
             if expert_storage == "int8-native"
             else "qwen3_5_stage7_5_int8_reference_correctness"
         ),
-        "stage": "7.5.4" if expert_storage == "int8-native" else "7.5.3",
+        "stage": (
+            "7.6.7"
+            if fused
+            else "7.5.4" if expert_storage == "int8-native" else "7.5.3"
+        ),
         "agent": "Main Dev",
         "model": str(root),
         "int8_container": str(container),
@@ -1135,6 +1443,9 @@ def compare_int8_reference_paths(
         "prefetch_policy": prefetch_policy,
         "prefetch_budget_ratio": prefetch_budget_ratio,
         "coalesce_gap": coalesce_gap,
+        "native_dispatch": native_dispatch,
+        "deterministic_io_pipeline": deterministic_io_pipeline,
+        "fuse_deltanet_projections": fuse_deltanet_projections,
         "runtime_identity": resident["runtime_identity"],
         "resident": {
             **resident,
@@ -1620,6 +1931,9 @@ def _run_text_path(
     telemetry_level: str = "summary",
     expert_storage: str = "bf16",
     int8_container: str | Path | None = None,
+    native_dispatch: str = "legacy",
+    deterministic_io_pipeline: bool = False,
+    fuse_deltanet_projections: bool = False,
 ) -> tuple[dict[str, Any], float]:
     load_started = time.perf_counter()
     runtime = Qwen36TextRuntime.from_pretrained(
@@ -1639,6 +1953,9 @@ def _run_text_path(
         telemetry_level=telemetry_level,
         expert_storage=expert_storage,
         int8_container=int8_container,
+        native_dispatch=native_dispatch,
+        deterministic_io_pipeline=deterministic_io_pipeline,
+        fuse_deltanet_projections=fuse_deltanet_projections,
     )
     load_seconds = time.perf_counter() - load_started
     try:

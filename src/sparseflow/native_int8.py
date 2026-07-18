@@ -7,6 +7,17 @@ import threading
 
 _LOAD_LOCK = threading.Lock()
 _LOADED = False
+_PROFILE_ANCHOR = None
+_PROFILE_FIELDS = (
+    "native_row_sums_ns",
+    "native_row_sums_calls",
+    "native_activation_quantization_ns",
+    "native_activation_quantization_calls",
+    "native_gemv_ns",
+    "native_gemv_calls",
+    "native_dynamic_linear_ns",
+    "native_dynamic_linear_calls",
+)
 
 
 def load_native_int8() -> None:
@@ -31,7 +42,7 @@ def load_native_int8() -> None:
         build.mkdir(parents=True, exist_ok=True)
         load(
             name="sparseflow_int8_vnni",
-            sources=[str(source)],
+            sources=[str(source), str(root / "native" / "moe_dispatch.cpp")],
             extra_cflags=[
                 "-O3",
                 "-std=c++17",
@@ -45,7 +56,9 @@ def load_native_int8() -> None:
             is_python_module=False,
             verbose=False,
         )
-        if not hasattr(torch.ops.sparseflow_native, "dynamic_linear"):
+        if not hasattr(torch.ops.sparseflow_native, "dynamic_linear") or not hasattr(
+            torch.ops.sparseflow_native, "fused_moe"
+        ):
             raise RuntimeError("SparseFlow native INT8 operators failed to register")
         _LOADED = True
 
@@ -58,13 +71,57 @@ def prepare_native_weights(location, payloads, torch):
         scales = payloads[f"{part.part}.scales"]
         weight = torch.frombuffer(data, dtype=torch.int8).reshape(part.shape)
         scale_tensor = torch.frombuffer(scales, dtype=torch.float16).float().contiguous()
-        row_sums = torch.ops.sparseflow_native.row_sums(weight)
+        row_sum_payload = payloads.get(f"{part.part}.row_sums")
+        row_sums = (
+            torch.frombuffer(row_sum_payload, dtype=torch.int32).contiguous()
+            if row_sum_payload is not None
+            else torch.ops.sparseflow_native.row_sums(weight)
+        )
         result[part.part] = {
             "weight": weight,
             "scales": scale_tensor,
             "row_sums": row_sums,
         }
     return result
+
+
+def set_native_profile(enabled: bool) -> None:
+    global _PROFILE_ANCHOR
+    load_native_int8()
+    import torch
+
+    if _PROFILE_ANCHOR is None:
+        _PROFILE_ANCHOR = torch.empty(0)
+    torch.ops.sparseflow_native.set_profile_enabled(_PROFILE_ANCHOR, bool(enabled))
+    if enabled:
+        torch.ops.sparseflow_native.reset_profile(_PROFILE_ANCHOR)
+
+
+def native_profile_snapshot() -> dict[str, int]:
+    load_native_int8()
+    import torch
+
+    global _PROFILE_ANCHOR
+    if _PROFILE_ANCHOR is None:
+        _PROFILE_ANCHOR = torch.empty(0)
+    values = torch.ops.sparseflow_native.profile_snapshot(_PROFILE_ANCHOR).tolist()
+    return dict(zip(_PROFILE_FIELDS, (int(value) for value in values), strict=True))
+
+
+def native_profile_delta(before: dict[str, int], after: dict[str, int]) -> dict[str, float]:
+    return {
+        "native_row_sums": (after["native_row_sums_ns"] - before["native_row_sums_ns"]) / 1e6,
+        "native_activation_quantization": (
+            after["native_activation_quantization_ns"]
+            - before["native_activation_quantization_ns"]
+        )
+        / 1e6,
+        "native_gemv": (after["native_gemv_ns"] - before["native_gemv_ns"]) / 1e6,
+        "native_dynamic_linear": (
+            after["native_dynamic_linear_ns"] - before["native_dynamic_linear_ns"]
+        )
+        / 1e6,
+    }
 
 
 def run_native_expert(hidden_states, weights, torch):

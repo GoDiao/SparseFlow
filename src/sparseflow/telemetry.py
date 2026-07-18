@@ -37,12 +37,30 @@ _COUNTER_KEYS = (
 )
 
 _TIMING_CATEGORIES = (
+    "model_forward",
+    "decoder_layer",
+    "attention",
+    "linear_attention",
+    "input_layernorm",
+    "post_attention_layernorm",
+    "moe_block",
     "router",
+    "shared_expert",
+    "shared_expert_gate",
+    "routed_experts",
     "dispatch",
     "prepare",
     "provider_get",
     "expert_kernel",
     "routing_accumulation",
+    "final_norm",
+    "lm_head",
+    "argmax",
+    "token_loop_overhead",
+    "native_row_sums",
+    "native_activation_quantization",
+    "native_gemv",
+    "native_dynamic_linear",
 )
 
 
@@ -67,9 +85,10 @@ class RuntimeTelemetry:
     _current: dict[str, Any] | None = None
     _observer_seconds: float = 0.0
     _pending_timings_ms: dict[str, float] = field(default_factory=dict)
+    _provider_total: dict[str, int | float] = field(default_factory=_zero_provider)
 
     def __post_init__(self) -> None:
-        if self.level not in {"none", "summary", "layer"}:
+        if self.level not in {"none", "summary", "profile", "layer"}:
             raise ValueError(f"unknown telemetry level: {self.level}")
 
     def reset(self) -> None:
@@ -78,6 +97,7 @@ class RuntimeTelemetry:
         self._current = None
         self._observer_seconds = 0.0
         self._pending_timings_ms.clear()
+        self._provider_total = _zero_provider()
 
     def begin_forward(
         self,
@@ -103,8 +123,31 @@ class RuntimeTelemetry:
         }
         self._pending_timings_ms = {key: 0.0 for key in _TIMING_CATEGORIES}
 
+    def record_summary_layer(self, selected_experts) -> None:
+        """Update fixed-cost route counters without provider snapshots."""
+
+        if self.level != "summary":
+            return
+        if self._current is None:
+            self.begin_forward(-1, "unknown", None)
+        assert self._current is not None
+        self._current["layers"] += 1
+        self._current["route_requests"] += int(selected_experts.numel())
+
+    def set_provider_total(
+        self,
+        provider_before: dict[str, Any] | None,
+        provider_after: dict[str, Any] | None,
+    ) -> None:
+        if (
+            self.level == "summary"
+            and provider_before is not None
+            and provider_after is not None
+        ):
+            self._provider_total = counter_delta(provider_before, provider_after)
+
     def add_timing(self, category: str, elapsed_ms: float) -> None:
-        if self.level != "layer":
+        if self.level not in {"profile", "layer"}:
             return
         if category not in self._pending_timings_ms:
             self._pending_timings_ms[category] = 0.0
@@ -185,7 +228,11 @@ class RuntimeTelemetry:
                 else None
             ),
             "layer_total_ms": sum(item["layer_total_ms"] for item in self._forwards),
-            "provider": _sum_provider(self._forwards),
+            "provider": (
+                dict(self._provider_total)
+                if self.level == "summary"
+                else _sum_provider(self._forwards)
+            ),
             "timings_ms": _sum_timings(self._forwards),
         }
         return {

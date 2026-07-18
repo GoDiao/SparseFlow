@@ -5,13 +5,45 @@
 #include <torch/library.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <limits>
 
 namespace {
 
+using Clock = std::chrono::steady_clock;
+
+enum ProfileCounter : int64_t {
+  kRowSumsNs = 0,
+  kRowSumsCalls,
+  kQuantizeNs,
+  kQuantizeCalls,
+  kGemvNs,
+  kGemvCalls,
+  kDynamicNs,
+  kDynamicCalls,
+  kProfileCounterCount,
+};
+
+std::atomic<bool> g_profile_enabled{false};
+std::atomic<int64_t> g_profile[kProfileCounterCount];
+
+inline int64_t elapsed_ns(Clock::time_point started) {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - started).count();
+}
+
+inline void add_profile(ProfileCounter elapsed, ProfileCounter calls, Clock::time_point started) {
+  if (!g_profile_enabled.load(std::memory_order_relaxed)) {
+    return;
+  }
+  g_profile[elapsed].fetch_add(elapsed_ns(started), std::memory_order_relaxed);
+  g_profile[calls].fetch_add(1, std::memory_order_relaxed);
+}
+
 at::Tensor row_sums_cpu(const at::Tensor& weight) {
+  const auto profile_started = Clock::now();
   TORCH_CHECK(weight.device().is_cpu(), "weight must be on CPU");
   TORCH_CHECK(weight.scalar_type() == at::kChar, "weight must be int8");
   TORCH_CHECK(weight.dim() == 2 && weight.is_contiguous(), "weight must be contiguous [N,K]");
@@ -40,6 +72,7 @@ at::Tensor row_sums_cpu(const at::Tensor& weight) {
       output[row] = sum;
     }
   });
+  add_profile(kRowSumsNs, kRowSumsCalls, profile_started);
   return result;
 }
 
@@ -48,6 +81,7 @@ at::Tensor dynamic_linear_cpu(
     const at::Tensor& weight,
     const at::Tensor& weight_scales,
     const at::Tensor& weight_row_sums) {
+  const auto dynamic_started = Clock::now();
   TORCH_CHECK(input.device().is_cpu() && weight.device().is_cpu(), "tensors must be on CPU");
   TORCH_CHECK(input.scalar_type() == at::kFloat, "input must be float32");
   TORCH_CHECK(weight.scalar_type() == at::kChar, "weight must be int8");
@@ -71,6 +105,7 @@ at::Tensor dynamic_linear_cpu(
   auto* input_scale_data = input_scales.mutable_data_ptr<float>();
   auto* zero_point_data = zero_points.mutable_data_ptr<int32_t>();
 
+  const auto quantize_started = Clock::now();
   at::parallel_for(0, m, 1, [&](int64_t begin, int64_t end) {
     for (int64_t row = begin; row < end; ++row) {
       const float* source = input_data + row * k;
@@ -95,7 +130,9 @@ at::Tensor dynamic_linear_cpu(
       }
     }
   });
+  add_profile(kQuantizeNs, kQuantizeCalls, quantize_started);
 
+  const auto gemv_started = Clock::now();
   auto output = at::empty({m, n}, input.options());
   const auto* weight_data = weight.const_data_ptr<int8_t>();
   const auto* weight_scale_data = weight_scales.const_data_ptr<float>();
@@ -123,7 +160,31 @@ at::Tensor dynamic_linear_cpu(
           weight_scale_data[output_channel];
     }
   });
+  add_profile(kGemvNs, kGemvCalls, gemv_started);
+  add_profile(kDynamicNs, kDynamicCalls, dynamic_started);
   return output;
+}
+
+void set_profile_enabled(const at::Tensor& anchor, bool enabled) {
+  TORCH_CHECK(anchor.device().is_cpu(), "profile anchor must be on CPU");
+  g_profile_enabled.store(enabled, std::memory_order_relaxed);
+}
+
+void reset_profile(const at::Tensor& anchor) {
+  TORCH_CHECK(anchor.device().is_cpu(), "profile anchor must be on CPU");
+  for (auto& counter : g_profile) {
+    counter.store(0, std::memory_order_relaxed);
+  }
+}
+
+at::Tensor profile_snapshot(const at::Tensor& anchor) {
+  TORCH_CHECK(anchor.device().is_cpu(), "profile anchor must be on CPU");
+  auto result = at::empty({kProfileCounterCount}, at::TensorOptions().dtype(at::kLong));
+  auto* output = result.mutable_data_ptr<int64_t>();
+  for (int64_t index = 0; index < kProfileCounterCount; ++index) {
+    output[index] = g_profile[index].load(std::memory_order_relaxed);
+  }
+  return result;
 }
 
 }  // namespace
@@ -131,11 +192,17 @@ at::Tensor dynamic_linear_cpu(
 TORCH_LIBRARY(sparseflow_native, m) {
   m.def("row_sums(Tensor weight) -> Tensor");
   m.def("dynamic_linear(Tensor input, Tensor weight, Tensor weight_scales, Tensor weight_row_sums) -> Tensor");
+  m.def("set_profile_enabled(Tensor anchor, bool enabled) -> ()");
+  m.def("reset_profile(Tensor anchor) -> ()");
+  m.def("profile_snapshot(Tensor anchor) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(sparseflow_native, CPU, m) {
   m.impl("row_sums", &row_sums_cpu);
   m.impl("dynamic_linear", &dynamic_linear_cpu);
+  m.impl("set_profile_enabled", &set_profile_enabled);
+  m.impl("reset_profile", &reset_profile);
+  m.impl("profile_snapshot", &profile_snapshot);
 }
 
 // [Main Dev]

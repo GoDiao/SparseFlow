@@ -200,6 +200,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=1)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--prefetch-workers", type=int, default=None)
+    parser.add_argument(
+        "--prefetch-policy",
+        choices=("none", "current-route", "previous-token", "hot-set"),
+        default=None,
+    )
     parser.add_argument("--prefetch-budget-ratio", type=float, default=0.10)
     parser.add_argument("--hot-ratio", type=float, default=0.25)
     parser.add_argument("--coalesce-gap", type=int, default=0)
@@ -209,13 +214,22 @@ def main(argv: list[str] | None = None) -> int:
         default="bf16",
     )
     parser.add_argument("--int8-container")
-    parser.add_argument("--stage", choices=("7.4", "7.5.5", "7.5.6"))
+    parser.add_argument(
+        "--native-dispatch", choices=("legacy", "fused", "hybrid"), default="legacy"
+    )
+    parser.add_argument("--deterministic-io-pipeline", action="store_true")
+    parser.add_argument("--fuse-deltanet-projections", action="store_true")
+    parser.add_argument("--stage", choices=("7.4", "7.5.5", "7.5.6", "7.6.0", "7.6.7"))
     parser.add_argument(
         "--cache-state",
         choices=("uncontrolled", "app-cold", "workload-warm", "model-cold"),
         default="workload-warm",
     )
-    parser.add_argument("--telemetry-level", choices=("none", "summary", "layer"), default="summary")
+    parser.add_argument(
+        "--telemetry-level",
+        choices=("none", "summary", "profile", "layer"),
+        default="summary",
+    )
     args = parser.parse_args(argv)
 
     if args.threads < 1 or args.runs < 1 or args.warmup < 0:
@@ -264,6 +278,8 @@ def main(argv: list[str] | None = None) -> int:
     config = dict(VARIANTS[args.variant])
     if args.prefetch_workers is not None:
         config["prefetch_workers"] = args.prefetch_workers
+    if args.prefetch_policy is not None:
+        config["prefetch_policy"] = args.prefetch_policy
     effective_cache_bytes = cache_bytes if config["mode"] == "streaming" else None
     stage = args.stage or ("7.4" if args.expert_storage == "bf16" else "7.5.5")
     output = Path(args.output).expanduser()
@@ -343,6 +359,9 @@ def main(argv: list[str] | None = None) -> int:
         experts_implementation="eager",
         expert_storage=args.expert_storage,
         int8_container=int8_container,
+        native_dispatch=args.native_dispatch,
+        deterministic_io_pipeline=args.deterministic_io_pipeline,
+        fuse_deltanet_projections=args.fuse_deltanet_projections,
     )
     result["load"] = {
         "seconds": time.perf_counter() - load_started,

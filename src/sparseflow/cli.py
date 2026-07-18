@@ -19,7 +19,7 @@ from .benchmark import (
 from .bytes import format_bytes
 from .cache_policy import POLICY_VARIANTS
 from .loader import load_expert_raw
-from .int8_container import convert_experts_int8
+from .int8_container import build_int8_execution_metadata, convert_experts_int8
 from .locator import ExpertLocator
 from .memory_loader import (
     build_memory_load_plan,
@@ -98,6 +98,16 @@ def main(argv: list[str] | None = None) -> int:
     int8_convert_p.add_argument("--no-resume", action="store_true")
     int8_convert_p.add_argument("--report", help="Write the conversion result JSON.")
     int8_convert_p.add_argument("--json", action="store_true")
+
+    int8_meta_p = sub.add_parser(
+        "int8-exec-meta",
+        help="Build optional offline execution metadata for an INT8 container.",
+    )
+    int8_meta_p.add_argument("container")
+    int8_meta_p.add_argument("--threads", type=int, default=10)
+    int8_meta_p.add_argument("--no-resume", action="store_true")
+    int8_meta_p.add_argument("--report")
+    int8_meta_p.add_argument("--json", action="store_true")
 
     for command, help_text in (
         ("expert-stat", "Locate one fused expert without reading its payload."),
@@ -261,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
     text_p.add_argument("--prefetch-budget-ratio", type=float, default=0.25)
     text_p.add_argument(
         "--telemetry-level",
-        choices=("none", "summary", "layer"),
+        choices=("none", "summary", "profile", "layer"),
         default="summary",
     )
     text_p.add_argument("--telemetry-output", help="Write forward/layer telemetry as JSONL.")
@@ -299,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
     text_check_p.add_argument("--prefetch-budget-ratio", type=float, default=0.25)
     text_check_p.add_argument(
         "--telemetry-level",
-        choices=("none", "summary", "layer"),
+        choices=("none", "summary", "profile", "layer"),
         default="summary",
     )
     text_check_p.add_argument("--output", help="Write comparison JSON to this path.")
@@ -331,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
     runtime_check_p.add_argument("--prefetch-budget-ratio", type=float, default=0.25)
     runtime_check_p.add_argument(
         "--telemetry-level",
-        choices=("none", "summary", "layer"),
+        choices=("none", "summary", "profile", "layer"),
         default="summary",
     )
     runtime_check_p.add_argument("--output", help="Write comparison JSON to this path.")
@@ -354,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     int8_check_p.add_argument(
         "--telemetry-level",
-        choices=("none", "summary", "layer"),
+        choices=("none", "summary", "profile", "layer"),
         default="summary",
     )
     int8_check_p.add_argument("--prefetch-workers", type=int, default=0)
@@ -365,6 +375,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     int8_check_p.add_argument("--prefetch-budget-ratio", type=float, default=0.10)
     int8_check_p.add_argument("--coalesce-gap", type=int, default=0)
+    int8_check_p.add_argument(
+        "--native-dispatch", choices=("legacy", "fused", "hybrid"), default="legacy"
+    )
+    int8_check_p.add_argument("--deterministic-io-pipeline", action="store_true")
+    int8_check_p.add_argument("--fuse-deltanet-projections", action="store_true")
     int8_check_p.add_argument("--output")
     int8_check_p.add_argument("--json", action="store_true")
 
@@ -400,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
     policy_check_p.add_argument("--hot-ratio", type=float, default=0.25)
     policy_check_p.add_argument(
         "--telemetry-level",
-        choices=("none", "summary", "layer"),
+        choices=("none", "summary", "profile", "layer"),
         default="summary",
     )
     policy_check_p.add_argument("--output")
@@ -477,6 +492,36 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(result, indent=2, ensure_ascii=False)
                 if args.json
                 else _format_int8_conversion(result)
+            )
+            return 0
+        if args.command == "int8-exec-meta":
+            if args.threads < 1:
+                raise ValueError("threads must be positive")
+            import torch
+
+            torch.set_num_threads(args.threads)
+            result = build_int8_execution_metadata(
+                args.container,
+                resume=not args.no_resume,
+                progress=lambda item: print(
+                    f"int8-exec-meta layer={item['layer']} "
+                    f"complete={item['layers_complete']}/{item['layers_total']} "
+                    f"row_sums={item['row_sums_complete']}",
+                    file=sys.stderr,
+                    flush=True,
+                ),
+            )
+            if args.report:
+                report = Path(args.report).expanduser()
+                report.parent.mkdir(parents=True, exist_ok=True)
+                report.write_text(
+                    json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8",
+                )
+            print(
+                json.dumps(result, indent=2, ensure_ascii=False)
+                if args.json
+                else _format_int8_execution_metadata(result)
             )
             return 0
         if args.command == "expert-stat":
@@ -719,6 +764,9 @@ def main(argv: list[str] | None = None) -> int:
                 prefetch_policy=args.prefetch_policy,
                 prefetch_budget_ratio=args.prefetch_budget_ratio,
                 coalesce_gap=args.coalesce_gap,
+                native_dispatch=args.native_dispatch,
+                deterministic_io_pipeline=args.deterministic_io_pipeline,
+                fuse_deltanet_projections=args.fuse_deltanet_projections,
             )
             encoded = json.dumps(result, indent=2, ensure_ascii=False)
             if args.output:
@@ -807,6 +855,19 @@ def _format_int8_conversion(result: dict[str, Any]) -> str:
             f"experts     {result['experts']}",
             f"source      {format_bytes(result['source_bf16_expert_bytes'])}",
             f"logical     {format_bytes(result['logical_bytes'])}",
+            f"physical    {format_bytes(result['physical_bytes'])}",
+            f"elapsed     {result['elapsed_seconds']:.2f}s",
+            f"peak RSS    {format_bytes(result['peak_rss_bytes'])}",
+        ]
+    )
+
+
+def _format_int8_execution_metadata(result: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            f"SparseFlow INT8 execution metadata: {result['container']}",
+            f"format      {result['format_id']}",
+            f"entries     {result['entries']}",
             f"physical    {format_bytes(result['physical_bytes'])}",
             f"elapsed     {result['elapsed_seconds']:.2f}s",
             f"peak RSS    {format_bytes(result['peak_rss_bytes'])}",

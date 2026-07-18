@@ -13,6 +13,7 @@ from sparseflow.cache import ExpertCache
 from sparseflow.int8_container import (
     ALIGNMENT,
     Int8ExpertIndex,
+    build_int8_execution_metadata,
     convert_experts_int8,
     dequantize_part,
 )
@@ -119,6 +120,53 @@ class Int8ContainerTest(unittest.TestCase):
                 resident.close()
                 streaming.close()
                 reader.close()
+
+    def test_builds_resumable_offline_row_sums_sidecar(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            model = root / "model"
+            output = root / "int8"
+            model.mkdir()
+            write_fixture(model)
+            convert_experts_int8(model, output)
+
+            result = build_int8_execution_metadata(output)
+            self.assertEqual(result["format_id"], "canonical-int8-exec-v1")
+            self.assertEqual(result["entries"], 4)
+            index = Int8ExpertIndex.from_dir(output)
+            self.assertTrue(index.has_offline_row_sums)
+            location = index.locate(0, 1)
+            payload = index.read(0, 1)
+            for part in location.parts:
+                quantized = torch.frombuffer(
+                    bytearray(payload[part.part]["data"]), dtype=torch.int8
+                ).reshape(part.shape)
+                expected = quantized.sum(dim=1, dtype=torch.int32)
+                actual = torch.frombuffer(
+                    bytearray(index.read_row_sums(0, 1, part.part)),
+                    dtype=torch.int32,
+                )
+                self.assertTrue(torch.equal(actual, expected))
+
+            resumed = build_int8_execution_metadata(output, resume=True)
+            self.assertEqual(resumed["converted_layers"], 0)
+            self.assertEqual(resumed["resumed_layers"], 1)
+
+            native = Int8ResidentExpertProvider(output, torch, native=True)
+            try:
+                weights = native.get(0, 1)["gate_up_proj"]
+                self.assertTrue(
+                    torch.equal(
+                        weights["gate_up_proj"]["row_sums"],
+                        torch.frombuffer(
+                            bytearray(index.read_row_sums(0, 1, "gate_up_proj")),
+                            dtype=torch.int32,
+                        ),
+                    )
+                )
+                self.assertTrue(native.storage_report()["offline_row_sums"])
+            finally:
+                native.close()
 
     def test_cli_converts_selected_layers(self):
         with tempfile.TemporaryDirectory() as temp:

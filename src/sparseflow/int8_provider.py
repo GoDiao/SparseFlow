@@ -39,6 +39,8 @@ class Int8ResidentExpertProvider:
         self._native_views: dict[tuple[int, int], dict[str, Any]] = {}
         self._requests = 0
         self._closed = False
+        self._weight_resident_bytes = 0
+        self._execution_metadata_resident_bytes = 0
         started = time.perf_counter()
         for layer in self.index.layers:
             path = self.index.locate(layer, 0).file
@@ -48,6 +50,16 @@ class Int8ResidentExpertProvider:
             if read_bytes != len(buffer):
                 raise OSError(f"short INT8 resident preload: {path}")
             self._backings[path] = buffer
+            self._weight_resident_bytes += len(buffer)
+        if self.index.has_offline_row_sums:
+            for path in self.index.execution_files:
+                buffer = bytearray(path.stat().st_size)
+                with path.open("rb", buffering=0) as stream:
+                    read_bytes = stream.readinto(buffer)
+                if read_bytes != len(buffer):
+                    raise OSError(f"short INT8 execution metadata preload: {path}")
+                self._backings[path] = buffer
+                self._execution_metadata_resident_bytes += len(buffer)
         self.preload_seconds = time.perf_counter() - started
         self._resident_bytes = sum(len(value) for value in self._backings.values())
 
@@ -64,6 +76,12 @@ class Int8ResidentExpertProvider:
             payloads[f"{part.part}.scales"] = memoryview(backing)[
                 part.scale_offset : part.scale_offset + part.scale_nbytes
             ]
+            row_sums = self.index.row_sum_location(layer, expert_id, part.part)
+            if row_sums is not None:
+                row_sum_backing = self._backings[row_sums.file]
+                payloads[f"{part.part}.row_sums"] = memoryview(row_sum_backing)[
+                    row_sums.offset : row_sums.offset + row_sums.nbytes
+                ]
         self._requests += 1
         if self.native:
             from .native_int8 import prepare_native_weights
@@ -131,6 +149,8 @@ class Int8ResidentExpertProvider:
             **self.counters(),
             "policy": "all canonical INT8 routed experts resident by layer file",
             "resident_bytes": self._resident_bytes,
+            "weight_resident_bytes": self._weight_resident_bytes,
+            "execution_metadata_resident_bytes": self._execution_metadata_resident_bytes,
             "resident_layer_files": len(self._backings),
             "resident_layers": len(self.index.layers),
             "resident_experts": len(self.index.layers) * self.index.num_experts,
@@ -139,6 +159,7 @@ class Int8ResidentExpertProvider:
             "preload_read_bytes": self._resident_bytes,
             "bytes_after_preload": 0,
             "format_id": self.index.manifest["format_id"],
+            "offline_row_sums": self.index.has_offline_row_sums,
             "native_views": len(self._native_views),
         }
 
@@ -149,6 +170,8 @@ class Int8ResidentExpertProvider:
         self._backings.clear()
         self._native_views.clear()
         self._resident_bytes = 0
+        self._weight_resident_bytes = 0
+        self._execution_metadata_resident_bytes = 0
         self._closed = True
 
 
@@ -175,7 +198,7 @@ class _Int8ReadLocation:
 
     @property
     def nbytes(self) -> int:
-        return self.source.nbytes
+        return sum(part.nbytes for part in self.parts)
 
     def __iter__(self):
         return iter(self.parts)
@@ -236,6 +259,15 @@ class Int8StreamingExpertProvider(CachedExpertProvider):
         self.index = Int8ExpertIndex.from_dir(container_dir)
         self.native = native
         self._closed = False
+        self._execution_backings: dict[Path, bytearray] = {}
+        if native and self.index.has_offline_row_sums:
+            for path in self.index.execution_files:
+                buffer = bytearray(path.stat().st_size)
+                with path.open("rb", buffering=0) as stream:
+                    read_bytes = stream.readinto(buffer)
+                if read_bytes != len(buffer):
+                    raise OSError(f"short INT8 execution metadata preload: {path}")
+                self._execution_backings[path] = buffer
         locator = _Int8ReadIndex(self.index)
         super().__init__(
             container_dir,
@@ -273,7 +305,19 @@ class Int8StreamingExpertProvider(CachedExpertProvider):
         if self.native:
             from .native_int8 import prepare_native_weights
 
-            weights = prepare_native_weights(location.source, entry.parts, self.torch)
+            payloads = dict(entry.parts)
+            for part in location.source.parts:
+                row_sums = self.index.row_sum_location(
+                    location.layer,
+                    location.expert_id,
+                    part.part,
+                )
+                if row_sums is not None:
+                    backing = self._execution_backings[row_sums.file]
+                    payloads[f"{part.part}.row_sums"] = memoryview(backing)[
+                        row_sums.offset : row_sums.offset + row_sums.nbytes
+                    ]
+            weights = prepare_native_weights(location.source, payloads, self.torch)
             result = {"gate_up_proj": weights, "down_proj": None}
         else:
             result = dequantize_expert(location.source, entry.parts, self.torch)
@@ -295,6 +339,10 @@ class Int8StreamingExpertProvider(CachedExpertProvider):
             **super().storage_report(),
             "policy": "canonical INT8 routed experts loaded through ExpertCache",
             "format_id": self.index.manifest["format_id"],
+            "offline_row_sums": self.index.has_offline_row_sums,
+            "execution_metadata_resident_bytes": sum(
+                len(value) for value in self._execution_backings.values()
+            ),
         }
 
     def close(self) -> None:
@@ -302,6 +350,7 @@ class Int8StreamingExpertProvider(CachedExpertProvider):
             return
         super().close()
         self._decoded.clear()
+        self._execution_backings.clear()
         self._closed = True
 
 

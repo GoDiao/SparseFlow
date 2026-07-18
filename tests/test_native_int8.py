@@ -4,7 +4,15 @@ from pathlib import Path
 
 import torch
 
-from sparseflow.native_int8 import load_native_int8, reference_dynamic_linear
+from sparseflow.moe_probe import run_routed_experts
+from sparseflow.native_int8 import (
+    load_native_int8,
+    native_profile_snapshot,
+    reference_dynamic_linear,
+    run_native_expert,
+    set_native_profile,
+)
+from sparseflow.native_moe import run_fused_native_moe
 
 
 def has_native_requirements() -> bool:
@@ -37,6 +45,69 @@ class NativeInt8Test(unittest.TestCase):
             input_tensor, weight, scales, row_sums, torch
         )
         self.assertTrue(torch.allclose(native, reference, atol=1e-5, rtol=1e-6))
+
+    def test_profile_counters_are_opt_in_and_resettable(self):
+        weight = torch.ones((8, 64), dtype=torch.int8)
+        scales = torch.ones(8)
+        row_sums = torch.ops.sparseflow_native.row_sums(weight)
+        set_native_profile(True)
+        torch.ops.sparseflow_native.dynamic_linear(
+            torch.ones((1, 64)), weight, scales, row_sums
+        )
+        snapshot = native_profile_snapshot()
+        self.assertEqual(snapshot["native_dynamic_linear_calls"], 1)
+        self.assertGreater(snapshot["native_gemv_ns"], 0)
+        set_native_profile(False)
+
+    def test_fused_moe_is_deterministic_and_tracks_legacy_native_path(self):
+        generator = torch.Generator().manual_seed(1234)
+
+        def make_expert():
+            gate_weight = torch.randint(
+                -127, 128, (32, 64), generator=generator, dtype=torch.int8
+            )
+            down_weight = torch.randint(
+                -127, 128, (64, 16), generator=generator, dtype=torch.int8
+            )
+            return {
+                "native_int8": True,
+                "gate_up_proj": {
+                    "weight": gate_weight,
+                    "scales": torch.rand(32, generator=generator) * 0.01 + 0.001,
+                    "row_sums": torch.ops.sparseflow_native.row_sums(gate_weight),
+                },
+                "down_proj": {
+                    "weight": down_weight,
+                    "scales": torch.rand(64, generator=generator) * 0.01 + 0.001,
+                    "row_sums": torch.ops.sparseflow_native.row_sums(down_weight),
+                },
+            }
+
+        experts = {0: make_expert(), 1: make_expert()}
+
+        class Provider:
+            native = True
+
+            def prepare(self, _layer, _expert_ids):
+                pass
+
+            def get(self, _layer, expert_id):
+                return {"gate_up_proj": experts[expert_id], "down_proj": None}
+
+        hidden = torch.randn((2, 64), generator=generator, dtype=torch.bfloat16)
+        selected = torch.tensor([[1, 0], [0, 1]], dtype=torch.long)
+        routing = torch.tensor([[0.4, 0.6], [0.7, 0.3]], dtype=torch.bfloat16)
+        legacy = run_routed_experts(
+            hidden,
+            selected,
+            routing,
+            lambda expert_id: Provider().get(0, expert_id),
+        )
+        fused = run_fused_native_moe(hidden, selected, routing, Provider(), 0)
+        repeated = run_fused_native_moe(hidden, selected, routing, Provider(), 0)
+        self.assertTrue(torch.equal(fused, repeated))
+        difference = (fused.float() - legacy.float()).abs()
+        self.assertLess(float(difference.max()), 0.02)
 
 
 if __name__ == "__main__":

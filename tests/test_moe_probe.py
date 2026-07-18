@@ -73,6 +73,29 @@ class MoeProbeTest(unittest.TestCase):
         self.assertEqual(observed[0], [1.0, 0.0, 2.0])
         self.assertEqual(observed[1], [0.0, 2.0, 1.0])
 
+    def test_single_token_fast_path_keeps_sorted_expert_accumulation(self):
+        hidden = torch.tensor([[1.0, 2.0]], dtype=torch.bfloat16)
+        selected = torch.tensor([[3, 1, 2]], dtype=torch.long)
+        routing = torch.tensor([[0.5, 0.25, 0.125]], dtype=torch.bfloat16)
+        loaded = []
+
+        def load(expert_id):
+            loaded.append(expert_id)
+            return {"gate_up_proj": expert_id, "down_proj": expert_id}
+
+        def kernel(_hidden, gate_up_proj, _down_proj):
+            return torch.full((1, 2), float(gate_up_proj), dtype=torch.bfloat16)
+
+        with patch("sparseflow.moe_probe.run_expert_kernel", side_effect=kernel):
+            output = run_routed_experts(hidden, selected, routing, load)
+
+        expected = torch.zeros_like(hidden)
+        for expert_id, position in ((1, 1), (2, 2), (3, 0)):
+            contribution = torch.full_like(hidden, float(expert_id))
+            expected.add_((contribution * routing[0, position, None]).to(expected.dtype))
+        self.assertEqual(loaded, [1, 2, 3])
+        self.assertTrue(torch.equal(output, expected))
+
     def test_resident_and_streaming_use_the_same_kernel(self):
         with tempfile.TemporaryDirectory() as temp:
             model = Path(temp)

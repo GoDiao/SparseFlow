@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 import time
-from typing import Callable, Mapping, TypeAlias
+from typing import Any, Callable, Mapping, TypeAlias
 
 from .cache_policy import CachePolicy, LRUPolicy
 
@@ -25,6 +25,34 @@ class CachedExpert:
             if self.size_override is not None
             else sum(len(data) for data in self.parts.values())
         )
+
+
+class ExpertLease:
+    """Keep one cache entry and its backing buffers stable during native use."""
+
+    def __init__(
+        self,
+        cache: "ExpertCache | None",
+        entry: CachedExpert,
+        references: tuple[Any, ...] = (),
+    ):
+        self.cache = cache
+        self.entry = entry
+        self.references = references
+        self._released = False
+
+    def __enter__(self) -> CachedExpert:
+        return self.entry
+
+    def __exit__(self, _exc_type, _exc, _traceback) -> None:
+        self.release()
+
+    def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
+        if self.cache is not None:
+            self.cache._release_lease(self.entry)
 
 
 @dataclass
@@ -90,6 +118,8 @@ class ExpertCache:
         self._global_lru: OrderedDict[tuple[int, int], None] = OrderedDict()
         self._cached_bytes = 0
         self._entries = 0
+        self._pin_counts: dict[int, int] = {}
+        self._pinned_entries: dict[int, CachedExpert] = {}
         self._eviction_listeners: list[Callable[[CachedExpert], None]] = []
         self._phase = "unknown"
         self._forward = -1
@@ -107,6 +137,43 @@ class ExpertCache:
     @property
     def entries(self) -> int:
         return self._entries
+
+    @property
+    def pinned_entries(self) -> int:
+        return len(self._pinned_entries)
+
+    @property
+    def pinned_bytes(self) -> int:
+        return sum(entry.nbytes for entry in self._pinned_entries.values())
+
+    def lease(
+        self,
+        entry: CachedExpert,
+        references: tuple[Any, ...] = (),
+    ) -> ExpertLease:
+        """Pin an admitted entry until the returned lease is released."""
+
+        live = self.peek(entry.layer, entry.expert_id)
+        if live is not entry:
+            return ExpertLease(None, entry, references)
+        identity = id(entry)
+        self._pin_counts[identity] = self._pin_counts.get(identity, 0) + 1
+        self._pinned_entries[identity] = entry
+        return ExpertLease(self, entry, references)
+
+    def _release_lease(self, entry: CachedExpert) -> None:
+        identity = id(entry)
+        count = self._pin_counts.get(identity, 0)
+        if count <= 0:
+            raise RuntimeError("expert lease released after cache ownership ended")
+        if count == 1:
+            self._pin_counts.pop(identity, None)
+            self._pinned_entries.pop(identity, None)
+        else:
+            self._pin_counts[identity] = count - 1
+
+    def _is_pinned(self, entry: CachedExpert) -> bool:
+        return self._pin_counts.get(id(entry), 0) > 0
 
     def add_eviction_listener(self, listener: Callable[[CachedExpert], None]) -> None:
         if listener not in self._eviction_listeners:
@@ -250,11 +317,15 @@ class ExpertCache:
 
         while self.capacity_per_layer is not None and len(layer_cache) >= self.capacity_per_layer:
             victim_started = time.perf_counter() if self.collect_timings else None
-            if type(self.policy) is LRUPolicy:
-                victim = (entry.layer, next(iter(layer_cache)))
-            else:
-                candidates = tuple((entry.layer, expert) for expert in layer_cache)
-                victim = self.policy.choose_victim(candidates)
+            candidates = tuple(
+                (entry.layer, expert)
+                for expert, candidate in layer_cache.items()
+                if not self._is_pinned(candidate)
+            )
+            if not candidates:
+                self.stats.admission_rejections += 1
+                return
+            victim = candidates[0] if type(self.policy) is LRUPolicy else self.policy.choose_victim(candidates)
             self._record_timing("victim_selection", victim_started)
             self._evict_key(victim)
 
@@ -268,31 +339,54 @@ class ExpertCache:
 
         while self.max_bytes is not None and self._cached_bytes > self.max_bytes:
             victim_started = time.perf_counter() if self.collect_timings else None
-            if type(self.policy) is LRUPolicy:
-                victim = next(iter(self._global_lru))
-            else:
-                victim = self.policy.choose_victim(tuple(self._global_lru))
+            candidates = tuple(
+                key
+                for key in self._global_lru
+                if not self._is_pinned(self._layers[key[0]][key[1]])
+            )
+            if not candidates:
+                raise RuntimeError("cache budget exceeded with no evictable expert")
+            victim = candidates[0] if type(self.policy) is LRUPolicy else self.policy.choose_victim(candidates)
             self._record_timing("victim_selection", victim_started)
+            if victim == (entry.layer, entry.expert_id):
+                self._remove_key(victim, notify=False, count_eviction=False)
+                self.stats.admission_rejections += 1
+                return
             self._evict_key(victim)
 
     def _evict_key(self, key: tuple[int, int]) -> None:
+        entry = self._layers[key[0]][key[1]]
+        if self._is_pinned(entry):
+            raise RuntimeError(f"cannot evict leased expert: {key}")
+        self._remove_key(key, notify=True, count_eviction=True)
+
+    def _remove_key(
+        self,
+        key: tuple[int, int],
+        notify: bool,
+        count_eviction: bool,
+    ) -> None:
         old_layer, old_expert = key
         old_cache = self._layers[old_layer]
         old_entry = old_cache.pop(old_expert)
         self._global_lru.pop(key, None)
         self._cached_bytes -= old_entry.nbytes
         self._entries -= 1
-        self.stats.evictions += 1
+        if count_eviction:
+            self.stats.evictions += 1
         policy_started = time.perf_counter() if self.collect_timings else None
         self.policy.on_evict(key, old_entry.nbytes)
         self._record_timing("policy_maintenance", policy_started)
-        self._notify_evicted(old_entry)
+        if notify:
+            self._notify_evicted(old_entry)
 
     def _notify_evicted(self, entry: CachedExpert) -> None:
         for listener in tuple(self._eviction_listeners):
             listener(entry)
 
     def clear(self) -> None:
+        if self._pin_counts:
+            raise RuntimeError("cannot clear ExpertCache while expert leases are active")
         for layer_cache in self._layers.values():
             for entry in layer_cache.values():
                 self.policy.on_evict((entry.layer, entry.expert_id), entry.nbytes)
@@ -312,6 +406,8 @@ class ExpertCache:
 
         return {
             **self.stats.as_dict(self.cached_bytes, self.entries),
+            "pinned_entries": self.pinned_entries,
+            "pinned_bytes": self.pinned_bytes,
             **{f"timing_{key}_ms_total": value for key, value in self._timings_ms.items()},
         }
 

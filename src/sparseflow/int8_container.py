@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import mmap
 from pathlib import Path
 import struct
 from typing import Any, Callable, Iterable
@@ -19,6 +20,12 @@ MAGIC = b"SPFINT8\0"
 ALIGNMENT = 4096
 HEADER = struct.Struct("<8sIIII")
 PARTS = ("gate_up_proj", "down_proj")
+EXEC_FORMAT_ID = "canonical-int8-exec-v1"
+EXEC_FORMAT_VERSION = 1
+EXEC_INDEX_NAME = "execution-index.json"
+EXEC_MANIFEST_NAME = "execution-manifest.json"
+EXEC_MAGIC = b"SPFEXEC\0"
+EXEC_HEADER = struct.Struct("<8sIIII")
 
 
 @dataclass(frozen=True)
@@ -81,6 +88,31 @@ class Int8ExpertLocation:
         raise KeyError(name)
 
 
+@dataclass(frozen=True)
+class Int8RowSumLocation:
+    layer: int
+    expert_id: int
+    part: str
+    file: Path
+    offset: int
+    nbytes: int
+    sha256: str
+    rows: int
+
+    @classmethod
+    def from_dict(cls, root: Path, value: dict[str, Any]) -> "Int8RowSumLocation":
+        return cls(
+            layer=int(value["layer"]),
+            expert_id=int(value["expert_id"]),
+            part=value["part"],
+            file=root / value["file"],
+            offset=int(value["offset"]),
+            nbytes=int(value["nbytes"]),
+            sha256=value["sha256"],
+            rows=int(value["rows"]),
+        )
+
+
 class Int8ExpertIndex:
     def __init__(self, root: Path, manifest: dict[str, Any], entries: Iterable[dict[str, Any]]):
         self.root = root
@@ -96,6 +128,8 @@ class Int8ExpertIndex:
                 file=root / entry["file"],
                 parts=tuple(Int8PartLocation.from_dict(item) for item in entry["parts"]),
             )
+        self.execution_manifest: dict[str, Any] | None = None
+        self._row_sums: dict[tuple[int, int, str], Int8RowSumLocation] = {}
 
     @classmethod
     def from_dir(cls, root: str | Path) -> "Int8ExpertIndex":
@@ -109,7 +143,70 @@ class Int8ExpertIndex:
         result = cls(path, manifest, index["entries"])
         for layer in result.layers:
             result._validate_layer_header(result.locate(layer, 0).file, layer)
+        result._load_execution_metadata()
         return result
+
+    @property
+    def has_offline_row_sums(self) -> bool:
+        return bool(self._row_sums)
+
+    @property
+    def execution_files(self) -> tuple[Path, ...]:
+        return tuple(sorted({location.file for location in self._row_sums.values()}))
+
+    def row_sum_location(
+        self,
+        layer: int,
+        expert_id: int,
+        part: str,
+    ) -> Int8RowSumLocation | None:
+        return self._row_sums.get((layer, expert_id, part))
+
+    def read_row_sums(self, layer: int, expert_id: int, part: str) -> bytes | None:
+        location = self.row_sum_location(layer, expert_id, part)
+        if location is None:
+            return None
+        with location.file.open("rb", buffering=0) as stream:
+            stream.seek(location.offset)
+            payload = stream.read(location.nbytes)
+        if len(payload) != location.nbytes:
+            raise OSError(f"short INT8 row-sum read: {location.file}")
+        if hashlib.sha256(payload).hexdigest() != location.sha256:
+            raise ValueError(
+                f"INT8 row-sum checksum mismatch: layer={layer}, expert={expert_id}, part={part}"
+            )
+        return payload
+
+    def _load_execution_metadata(self) -> None:
+        manifest_path = self.root / EXEC_MANIFEST_NAME
+        index_path = self.root / EXEC_INDEX_NAME
+        if not manifest_path.exists() and not index_path.exists():
+            return
+        if not manifest_path.is_file() or not index_path.is_file():
+            raise ValueError("incomplete INT8 execution metadata")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (
+            manifest.get("format_id") != EXEC_FORMAT_ID
+            or int(manifest.get("format_version", -1)) != EXEC_FORMAT_VERSION
+        ):
+            raise ValueError("unsupported INT8 execution metadata format")
+        if manifest.get("weight_index_sha256") != self.manifest.get("index_sha256"):
+            raise ValueError("INT8 execution metadata belongs to another weight index")
+        if _sha256_file(index_path) != manifest.get("index_sha256"):
+            raise ValueError("INT8 execution metadata index checksum mismatch")
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        for value in payload.get("row_sums", []):
+            location = Int8RowSumLocation.from_dict(self.root, value)
+            key = (location.layer, location.expert_id, location.part)
+            if key in self._row_sums:
+                raise ValueError(f"duplicate INT8 row-sum entry: {key}")
+            self._row_sums[key] = location
+        expected = len(self._entries) * len(PARTS)
+        if len(self._row_sums) != expected:
+            raise ValueError(
+                f"incomplete INT8 row-sum index: expected {expected}, got {len(self._row_sums)}"
+            )
+        self.execution_manifest = manifest
 
     @property
     def layers(self) -> tuple[int, ...]:
@@ -289,6 +386,183 @@ def convert_experts_int8(
         "peak_rss_bytes": peak_rss_bytes(),
         "manifest": manifest,
     }
+
+
+def build_int8_execution_metadata(
+    container_dir: str | Path,
+    resume: bool = True,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Build optional offline row sums without rewriting canonical INT8 weights."""
+
+    import torch
+
+    root = Path(container_dir).expanduser().resolve()
+    index = Int8ExpertIndex.from_dir(root)
+    output = root / "execution"
+    output.mkdir(exist_ok=True)
+    all_entries: list[dict[str, Any]] = []
+    converted_layers = 0
+    resumed_layers = 0
+    started = datetime.now(timezone.utc)
+    for layer in index.layers:
+        data_path = output / f"layer-{layer:03d}.sfx"
+        meta_path = output / f"layer-{layer:03d}.json"
+        if resume and data_path.is_file() and meta_path.is_file():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            _validate_execution_layer_metadata(
+                meta,
+                index.manifest["index_sha256"],
+                layer,
+                index.num_experts,
+                data_path,
+            )
+            entries = meta["row_sums"]
+            resumed_layers += 1
+        else:
+            entries = _build_execution_layer(index, layer, data_path, meta_path, torch)
+            converted_layers += 1
+        all_entries.extend(entries)
+        if progress is not None:
+            progress(
+                {
+                    "layer": layer,
+                    "layers_complete": converted_layers + resumed_layers,
+                    "layers_total": len(index.layers),
+                    "row_sums_complete": len(all_entries),
+                }
+            )
+
+    expected = len(index.layers) * index.num_experts * len(PARTS)
+    if len(all_entries) != expected:
+        raise RuntimeError(
+            f"INT8 execution index incomplete: expected {expected}, got {len(all_entries)}"
+        )
+    execution_index = {
+        "schema_version": 1,
+        "format_id": EXEC_FORMAT_ID,
+        "row_sums": all_entries,
+    }
+    _write_json_atomic(root / EXEC_INDEX_NAME, execution_index)
+    physical_bytes = sum(path.stat().st_size for path in output.glob("*.sfx"))
+    manifest = {
+        "schema_version": 1,
+        "format_id": EXEC_FORMAT_ID,
+        "format_version": EXEC_FORMAT_VERSION,
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "weight_format_id": index.manifest["format_id"],
+        "weight_index_sha256": index.manifest["index_sha256"],
+        "features": ["offline-row-sums"],
+        "row_sum_dtype": "I32",
+        "alignment": ALIGNMENT,
+        "layers": list(index.layers),
+        "num_experts": index.num_experts,
+        "entries": len(all_entries),
+        "physical_bytes": physical_bytes,
+        "index_sha256": _sha256_file(root / EXEC_INDEX_NAME),
+    }
+    _write_json_atomic(root / EXEC_MANIFEST_NAME, manifest)
+    return {
+        "schema_version": 1,
+        "kind": "sparseflow_int8_execution_metadata",
+        "agent": "Main Dev",
+        "container": str(root),
+        "format_id": EXEC_FORMAT_ID,
+        "converted_layers": converted_layers,
+        "resumed_layers": resumed_layers,
+        "entries": len(all_entries),
+        "physical_bytes": physical_bytes,
+        "elapsed_seconds": (datetime.now(timezone.utc) - started).total_seconds(),
+        "peak_rss_bytes": peak_rss_bytes(),
+        "manifest": manifest,
+    }
+
+
+def _build_execution_layer(index, layer, final_data, final_index, torch):
+    temp_data = final_data.with_suffix(final_data.suffix + ".tmp")
+    source_file = index.locate(layer, 0).file
+    entries = []
+    with source_file.open("rb") as source, temp_data.open("wb") as stream:
+        mapped = mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_COPY)
+        try:
+            header = EXEC_HEADER.pack(
+                EXEC_MAGIC,
+                EXEC_FORMAT_VERSION,
+                layer,
+                index.num_experts,
+                ALIGNMENT,
+            )
+            stream.write(header)
+            stream.write(b"\0" * (ALIGNMENT - len(header)))
+            for expert_id in range(index.num_experts):
+                location = index.locate(layer, expert_id)
+                for part in location.parts:
+                    view = memoryview(mapped)[
+                        part.data_offset : part.data_offset + part.data_nbytes
+                    ]
+                    weight = torch.frombuffer(view, dtype=torch.int8).reshape(part.shape)
+                    payload = (
+                        weight.sum(dim=1, dtype=torch.int32)
+                        .contiguous()
+                        .numpy()
+                        .tobytes()
+                    )
+                    del weight, view
+                    _align_stream(stream)
+                    offset = stream.tell()
+                    stream.write(payload)
+                    entries.append(
+                        {
+                            "layer": layer,
+                            "expert_id": expert_id,
+                            "part": part.part,
+                            "file": f"execution/{final_data.name}",
+                            "offset": offset,
+                            "nbytes": len(payload),
+                            "rows": part.shape[0],
+                            "sha256": hashlib.sha256(payload).hexdigest(),
+                        }
+                    )
+            _align_stream(stream)
+            stream.flush()
+        finally:
+            mapped.close()
+    temp_data.replace(final_data)
+    meta = {
+        "schema_version": 1,
+        "format_id": EXEC_FORMAT_ID,
+        "format_version": EXEC_FORMAT_VERSION,
+        "weight_index_sha256": index.manifest["index_sha256"],
+        "layer": layer,
+        "num_experts": index.num_experts,
+        "file": final_data.name,
+        "file_bytes": final_data.stat().st_size,
+        "file_sha256": _sha256_file(final_data),
+        "row_sums": entries,
+    }
+    _write_json_atomic(final_index, meta)
+    return entries
+
+
+def _validate_execution_layer_metadata(
+    meta,
+    weight_index_sha256,
+    layer,
+    num_experts,
+    data_file,
+) -> None:
+    if (
+        meta.get("format_id") != EXEC_FORMAT_ID
+        or int(meta.get("format_version", -1)) != EXEC_FORMAT_VERSION
+        or meta.get("weight_index_sha256") != weight_index_sha256
+    ):
+        raise ValueError(f"incompatible resumable execution metadata: {data_file}")
+    if int(meta.get("layer", -1)) != layer or int(meta.get("num_experts", -1)) != num_experts:
+        raise ValueError(f"execution metadata layer mismatch: {data_file}")
+    if data_file.stat().st_size != int(meta.get("file_bytes", -1)):
+        raise ValueError(f"execution metadata size mismatch: {data_file}")
+    if _sha256_file(data_file) != meta.get("file_sha256"):
+        raise ValueError(f"execution metadata checksum mismatch: {data_file}")
 
 
 def dequantize_part(location: Int8PartLocation, payload: dict[str, bytes], torch):

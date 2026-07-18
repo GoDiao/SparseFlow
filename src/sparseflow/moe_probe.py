@@ -1167,6 +1167,12 @@ def run_routed_experts(
     routed_output = hidden_states.new_zeros(hidden_states.shape)
     if dispatch_started is not None:
         timing_callback("dispatch", (time.perf_counter() - dispatch_started) * 1000.0)
+    single_token_positions = None
+    if hidden_states.shape[0] == 1 and selected_experts.shape[0] == 1:
+        single_token_positions = {
+            int(expert_id): position
+            for position, expert_id in enumerate(selected_experts[0].tolist())
+        }
     for expert_id in expert_ids:
         # Match Transformers' Qwen3.5-MoE dispatch order exactly.  Its
         # expert mask is laid out as [top_k, token], so torch.where visits
@@ -1174,12 +1180,17 @@ def run_routed_experts(
         # equivalent [token, top_k] order can produce different BF16 GEMM
         # rounding on CPU and the error compounds across decoder layers.
         dispatch_started = time.perf_counter() if timing_callback is not None else None
-        top_positions, token_indices = (
-            (selected_experts == expert_id)
-            .transpose(0, 1)
-            .nonzero(as_tuple=True)
-        )
-        current_state = hidden_states[token_indices]
+        if single_token_positions is None:
+            top_positions, token_indices = (
+                (selected_experts == expert_id)
+                .transpose(0, 1)
+                .nonzero(as_tuple=True)
+            )
+            current_state = hidden_states[token_indices]
+        else:
+            top_positions = single_token_positions[expert_id]
+            token_indices = None
+            current_state = hidden_states
         if dispatch_started is not None:
             timing_callback("dispatch", (time.perf_counter() - dispatch_started) * 1000.0)
         started = time.perf_counter() if timing_callback is not None else None
@@ -1195,12 +1206,18 @@ def run_routed_experts(
         if started is not None:
             timing_callback("expert_kernel", (time.perf_counter() - started) * 1000.0)
         started = time.perf_counter() if timing_callback is not None else None
-        current_output = current_output * routing_weights[token_indices, top_positions, None]
-        routed_output.index_add_(
-            0,
-            token_indices,
-            current_output.to(routed_output.dtype),
-        )
+        if single_token_positions is None:
+            current_output = current_output * routing_weights[
+                token_indices, top_positions, None
+            ]
+            routed_output.index_add_(
+                0,
+                token_indices,
+                current_output.to(routed_output.dtype),
+            )
+        else:
+            current_output = current_output * routing_weights[0, top_positions, None]
+            routed_output.add_(current_output.to(routed_output.dtype))
         if started is not None:
             timing_callback(
                 "routing_accumulation",

@@ -9,6 +9,8 @@ from torch import nn
 
 from sparseflow.cli import main
 from sparseflow.text_runtime import (
+    _FusedDeltaNetProjectionBank,
+    _FusedDeltaNetProjectionView,
     Qwen36TextRuntime,
     RouteAudit,
     SparseFlowQwenExperts,
@@ -57,6 +59,21 @@ class FakeModel(nn.Module):
 
 
 class TextRuntimeTest(unittest.TestCase):
+    def test_fused_deltanet_projection_bank_matches_independent_linears(self):
+        generator = torch.Generator().manual_seed(1234)
+        projections = tuple(nn.Linear(8, size, bias=False) for size in (6, 4, 2, 2))
+        hidden = torch.randn((1, 3, 8), generator=generator)
+        expected = tuple(module(hidden) for module in projections)
+        bank = _FusedDeltaNetProjectionBank(projections)
+        views = tuple(
+            _FusedDeltaNetProjectionView(bank, index)
+            for index in range(len(projections))
+        )
+        actual = tuple(view(hidden) for view in views)
+        for left, right in zip(expected, actual, strict=True):
+            self.assertTrue(torch.allclose(left, right, atol=1e-6, rtol=1e-6))
+        self.assertIsNone(bank._outputs)
+
     def test_summary_telemetry_does_not_materialize_unique_experts(self):
         class Selected:
             shape = (1, 8)
@@ -69,11 +86,17 @@ class TextRuntimeTest(unittest.TestCase):
 
         telemetry = RuntimeTelemetry("summary")
         telemetry.begin_forward(0, "decode", 3)
-        telemetry.record_layer(0, Selected(), {}, {}, 1.0)
+        telemetry.record_summary_layer(Selected())
+        telemetry.set_provider_total(
+            {"reader_calls": 2, "reader_bytes": 10},
+            {"reader_calls": 5, "reader_bytes": 40},
+        )
         result = telemetry.as_dict()
 
         self.assertEqual(result["summary"]["route_requests"], 8)
         self.assertIsNone(result["summary"]["unique_experts_sum"])
+        self.assertEqual(result["summary"]["provider"]["reader_calls"], 3)
+        self.assertEqual(result["summary"]["provider"]["reader_bytes"], 30)
         self.assertEqual(result["records"], [])
 
     def test_layer_telemetry_preserves_forward_phase_and_counter_deltas(self):
@@ -519,6 +542,79 @@ class TextRuntimeTest(unittest.TestCase):
         self.assertTrue(
             all(
                 call.kwargs["expert_storage"] == "int8-native"
+                for call in run_path.call_args_list
+            )
+        )
+
+    def test_fused_native_comparison_propagates_stage76_runtime_boundary(self):
+        identity = {"dispatch_id": "fused", "kernel_id": "int8-native"}
+
+        def result(resident):
+            storage = {
+                "resident_layers": 1 if resident else 0,
+                "resident_experts": 2 if resident else 0,
+                "resident_bytes": 120 if resident else 0,
+                "weight_resident_bytes": 100 if resident else 0,
+                "execution_metadata_resident_bytes": 20 if resident else 0,
+                "cached_bytes": 0 if resident else 12,
+                "demand_requests": 2,
+                "demand_reuse_hits": 1,
+                "demand_prefetch_served": 0,
+                "demand_misses": 1,
+                "transient_prefetch_entries": 0,
+                "pinned_entries": 0,
+            }
+            before = {**storage, "reader_calls": 0, "reader_bytes": 0}
+            after = {
+                **storage,
+                "reader_calls": 0 if resident else 4,
+                "reader_bytes": 0 if resident else 24,
+            }
+            return {
+                "input_ids": [1],
+                "generated_ids": [2],
+                "generated_tokens": 1,
+                "text": "ok",
+                "logit_fingerprints": [{"sha256": "same"}],
+                "route_audit": [{"sha256": "route"}],
+                "runtime_identity": identity,
+                "provider_storage": storage,
+                "storage_phases": {
+                    "before_prefill": before,
+                    "after_generation": after,
+                },
+                "loader": {
+                    "expert_reader_calls_after_init": 0,
+                    "expert_reader_bytes_after_init": 0,
+                },
+                "prefetch": None,
+            }
+
+        fake_index = types.SimpleNamespace(
+            manifest={"physical_bytes": 100},
+            layers=(0,),
+            num_experts=2,
+            execution_files=(types.SimpleNamespace(stat=lambda: types.SimpleNamespace(st_size=20)),),
+        )
+        with patch("sparseflow.text_runtime.Int8ExpertIndex.from_dir", return_value=fake_index):
+            with patch(
+                "sparseflow.text_runtime._run_text_path",
+                side_effect=[(result(True), 1.0), (result(False), 2.0)],
+            ) as run_path:
+                comparison = compare_int8_native_paths(
+                    "/tmp/model",
+                    "/tmp/int8",
+                    prompt="hello",
+                    max_new_tokens=1,
+                    cache_bytes=16,
+                    native_dispatch="fused",
+                )
+
+        self.assertEqual(comparison["stage"], "7.6.7")
+        self.assertTrue(comparison["all_invariants_pass"])
+        self.assertTrue(
+            all(
+                call.kwargs["native_dispatch"] == "fused"
                 for call in run_path.call_args_list
             )
         )
