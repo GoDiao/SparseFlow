@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_9_closure_base_cli",
+  "stage": "7.9-closure",
+  "agent": "Main Dev",
+  "attribution": "[Main Dev]",
+  "code_commit": "36aa619901561cf4148dbf8dfaadb8f73b058d53",
+  "environment": "fresh uv venv; uv pip install -e . --no-deps; torch not installed",
+  "torch_visible": false,
+  "commands": {
+    "preset": true,
+    "inspect": true,
+    "plan": true,
+    "doctor_low_memory": true,
+    "run_clean_optional_dependency_error": true,
+    "run_exit_code": 2,
+    "run_traceback": false
+  },
+  "decision": "base-cli-boundary-pass"
+}

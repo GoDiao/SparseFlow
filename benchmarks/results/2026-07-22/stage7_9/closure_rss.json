@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_9_closure_rss",
+  "stage": "7.9-closure",
+  "agent": "Main Dev",
+  "attribution": "[Main Dev]",
+  "code_commit": "36aa619901561cf4148dbf8dfaadb8f73b058d53",
+  "model": "model/Qwen3.6-35B-A3B",
+  "protocol": "independent process, max_new_tokens=4, prompt=Explain sparse expert routing in one sentence.",
+  "presets": {
+    "stable": {
+      "doctor": {
+        "available_ram_bytes": 125541191680,
+        "required_ram_bytes": 41546867968,
+        "recommended_ram_bytes": 45701554764,
+        "headroom_bytes": 83994323712,
+        "source": "cgroup",
+        "status": "pass"
+      },
+      "actual": {
+        "rss_before_prefill": 38242205696,
+        "rss_after_generation": 38384386048,
+        "process_peak_rss": 39331049472
+      },
+      "actual_gib": {
+        "current_before_prefill": 35.616,
+        "current_after_generation": 35.748,
+        "peak": 36.63
+      },
+      "generated_tokens": 4
+    },
+    "low": {
+      "doctor": {
+        "available_ram_bytes": 125541294080,
+        "required_ram_bytes": 13545530624,
+        "recommended_ram_bytes": 15693014272,
+        "headroom_bytes": 111995763456,
+        "source": "cgroup",
+        "status": "pass"
+      },
+      "actual": {
+        "rss_before_prefill": 5947330560,
+        "rss_after_generation": 10371637248,
+        "process_peak_rss": 10371637248
+      },
+      "actual_gib": {
+        "current_before_prefill": 5.539,
+        "current_after_generation": 9.659,
+        "peak": 9.659
+      },
+      "generated_tokens": 4
+    }
+  }
+}

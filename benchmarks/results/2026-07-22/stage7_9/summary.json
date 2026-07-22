@@ -4,7 +4,7 @@
   "stage": "7.9",
   "agent": "Main Dev",
   "attribution": "[Main Dev]",
-  "code_commit": "d3213742c098e4376a2b6123a7e40d770917f04d",
+  "code_commit": "36aa619901561cf4148dbf8dfaadb8f73b058d53",
   "model": "model/Qwen3.6-35B-A3B",
   "container": ".cache/stage7_5/qwen36-int8",
   "presets": {
@@ -26,13 +26,15 @@
       "path": "validation_standard.json",
       "verification": "validation_standard.verification.json",
       "all_exact": true,
-      "full_logits_persisted": false
+      "full_logits_persisted": false,
+      "clean_before_output": true
     },
     "endurance_512": {
       "path": "validation_endurance.json",
       "verification": "validation_endurance.verification.json",
       "all_exact": true,
-      "full_logits_persisted": false
+      "full_logits_persisted": false,
+      "clean_before_output": true
     }
   },
   "inherited_formal_evidence": {
@@ -44,6 +46,10 @@
     "streaming_shared_batch_status": "NO-GO"
   },
   "release_gates": {
+    "closure_clean_commit": "36aa619901561cf4148dbf8dfaadb8f73b058d53",
+    "closure_base_cli_without_torch": true,
+    "closure_doctor_ram_admission": true,
+    "closure_doctor_rss_calibration": true,
     "doctor_model_headers": true,
     "doctor_complete_40_layer_container": true,
     "offline_row_sums": true,

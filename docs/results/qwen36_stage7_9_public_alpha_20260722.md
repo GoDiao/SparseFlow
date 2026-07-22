@@ -2,7 +2,7 @@
 
 **Executor:** `[Main Dev]`
 **Benchmark executor:** `[Benchmark]`
-**Code baseline:** `d3213742c098e4376a2b6123a7e40d770917f04d`
+**Code baseline:** `36aa619901561cf4148dbf8dfaadb8f73b058d53`
 **Model:** `Qwen/Qwen3.6-35B-A3B`
 
 ## Decision
@@ -60,12 +60,29 @@ Observed single-prompt decode measurements on this host:
 
 | Level | Resident decode | S1 streaming decode | S1 hit rate | S1 loaded bytes |
 |---|---:|---:|---:|---:|
-| 32 | 16.699 s | 23.669 s | 51.85% | 17.47 GiB |
-| 128 | 65.092 s | 96.128 s | 57.84% | 53.99 GiB |
-| 512 | 267.304 s | 391.921 s | 63.98% | 176.16 GiB |
+| 32 | 16.808 s | 23.620 s | 51.85% | 17.47 GiB |
+| 128 | 61.776 s | 95.946 s | 57.84% | 53.99 GiB |
+| 512 | 257.132 s | 392.059 s | 63.98% | 176.16 GiB |
 
 The 512-token run retained a 3.998 GiB cache and released all leases. All
 three validation artifacts passed `verify_stage7_9.py`.
+
+## Closure Fix Evidence
+
+The base-install boundary was tested in a fresh `uv` virtual environment with
+no torch: `preset`, `inspect`, `plan`, and low-memory `doctor` completed, while
+`run` returned the documented optional-runtime error without a traceback.
+
+The experiment-host Doctor/RSS calibration on the same clean commit was:
+
+| Preset | Doctor required | Doctor recommended | Separate-process current RSS | Separate-process peak RSS |
+|---|---:|---:|---:|---:|
+| stable | 38.69 GiB | 42.56 GiB | 35.64 GiB | 36.63 GiB |
+| low-memory | 12.62 GiB | 14.62 GiB | 5.54 GiB | 9.66 GiB |
+
+Doctor used the cgroup memory source and reported about 116.92 GiB available.
+The detailed JSON artifacts are in
+`benchmarks/results/2026-07-22/stage7_9/closure_*.json`. `[Main Dev]`
 
 ## Inherited Formal Evidence
 

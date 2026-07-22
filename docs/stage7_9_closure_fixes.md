@@ -1,7 +1,7 @@
 # Stage 7.9 Closure Fixes
 
 **Owner:** `[Main Dev]`  
-**Status:** local implementation and tests complete; experiment-host acceptance pending
+**Status:** complete
 
 ## Scope
 
@@ -110,14 +110,28 @@ Record for each preset:
 | stable | JSON fields | about 36-39 GiB expected | measured |
 | low-memory | JSON fields | about 8-12 GiB expected | measured |
 
-If the prediction differs materially from the observed peak, adjust the
-reserve or component estimate and repeat local tests before publishing.
+The clean-commit experiment-host acceptance completed on
+`36aa619901561cf4148dbf8dfaadb8f73b058d53`:
+
+| preset | Doctor required | Doctor recommended | actual current RSS | actual peak RSS | result |
+|---|---:|---:|---:|---:|---|
+| stable | 38.69 GiB | 42.56 GiB | 35.64 GiB | 36.63 GiB | pass |
+| low-memory | 12.62 GiB | 14.62 GiB | 5.54 GiB | 9.66 GiB | pass |
+
+The host memory source was `cgroup`, with about 116.92 GiB available. The
+stable run loaded 32,422,297,600 bytes of resident INT8/sidecar payload; the
+low-memory run retained the configured 4 GiB cache. The compact artifacts are
+`closure_doctor_stable.json`, `closure_doctor_low.json`,
+`closure_rss.json`, and `closure_base_cli.json` under the Stage 7.9 result
+directory. `[Main Dev]`
 
 ### 5. Formal evidence last
 
-Only after the experiment-host clean-environment and Doctor/RSS comparison
-passes may the Stage 7.9 formal release evidence be regenerated. The final
-result must record the closure-fix commit, Doctor JSON, runtime identity, and
-the unchanged Public Alpha boundary. `[Main Dev]`
+The Stage 7.9 Smoke 32, Standard 128, and Endurance 512 evidence was then
+regenerated from the same clean commit. All three verifiers passed and record
+exact resident/streaming IDs, text, routes, logit fingerprints, cache budget,
+compact artifacts, and model/container identity. The final result records the
+closure-fix commit, Doctor JSON, runtime identity, and the unchanged Public
+Alpha boundary. `[Main Dev]`
 
 <!-- [Main Dev] -->

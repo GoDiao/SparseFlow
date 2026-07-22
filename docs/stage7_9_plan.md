@@ -67,9 +67,10 @@ gate and then a new runtime correctness gate.
 
 ## Final Audit
 
-The Smoke, Standard, and Endurance validation artifacts were generated from
-clean code commit `d3213742c098e4376a2b6123a7e40d770917f04d`. The subsequent
-commit only archives the already-verified result metadata and marks this plan
-complete; it does not change the runtime used by those validations.
+The CLI/runtime and RAM-admission closure fixes were committed in clean code
+commit `36aa619901561cf4148dbf8dfaadb8f73b058d53`. The Smoke, Standard, and
+Endurance validation artifacts were regenerated from that commit and passed
+all exactness, cache-budget, compactness, and identity gates. Experiment-host
+Doctor/RSS acceptance is recorded in the Stage 7.9 closure artifacts.
 
 <!-- [Main Dev] -->
