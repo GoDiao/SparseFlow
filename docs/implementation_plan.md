@@ -2,6 +2,10 @@
 
 SparseFlow 的第一阶段目标不是立刻手写完整推理器，而是先把 MoE 模型的资源结构、分层预算和 expert 访问边界做清楚。这样后续无论接 Qwen3.6、OLMoE、Mixtral，还是自研 runtime，都有一套稳定地基。
 
+长期架构方向见 [`docs/architecture_principles.md`](architecture_principles.md)：
+当前优先完成并发布 Qwen3.6 加速路径；后续通过真实第二模型验证 adapter，
+逐步演进为可接入现有推理框架的通用分层 MoE 加速后端。[Board]
+
 ## Phase 1: Inspect / Plan
 
 先做两个只读 CLI：
