@@ -27,7 +27,7 @@ from sparseflow.fixed_cohort import generate_fixed_cohort
 from sparseflow.text_runtime import Qwen36TextRuntime
 
 
-DEFAULT_PROMPTS = (
+BASE_PROMPTS = (
     "用一句话解释缓存命中率。",
     "Explain why sparse expert models can save memory.",
     "Write a Python function that returns the square of an integer.",
@@ -37,6 +37,48 @@ DEFAULT_PROMPTS = (
     "给出一个简单的数学等式。",
     "Describe a deterministic benchmark in one sentence.",
 )
+
+
+def select_equal_prompts(model: Path) -> tuple[tuple[str, ...], list[int]]:
+    """Build eight distinct prompts with one shared chat-template length."""
+
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        model,
+        local_files_only=True,
+        use_fast=True,
+    )
+
+    def token_length(text: str) -> int:
+        encoded = tokenizer.apply_chat_template(
+            [{"role": "user", "content": text}],
+            tokenize=True,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        )
+        return int(encoded["input_ids"].shape[-1])
+
+    candidate_maps: list[dict[int, str]] = []
+    for base in BASE_PROMPTS:
+        candidates: dict[int, str] = {}
+        for padding_words in range(0, 128):
+            padding = " ".join(["benchmark"] * padding_words)
+            candidate = base if not padding else f"{base} {padding}"
+            candidates[token_length(candidate)] = candidate
+        candidate_maps.append(candidates)
+    common_lengths = set(candidate_maps[0])
+    for candidates in candidate_maps[1:]:
+        common_lengths.intersection_update(candidates)
+    target = next((value for value in sorted(common_lengths) if value >= 32), None)
+    if target is None:
+        raise RuntimeError("could not construct eight equal-length formal prompts")
+    prompts = tuple(candidates[target] for candidates in candidate_maps)
+    lengths = [token_length(prompt) for prompt in prompts]
+    if len(set(lengths)) != 1:
+        raise AssertionError(f"formal prompt lengths are not equal: {lengths}")
+    return prompts, lengths
 
 
 def git_value(*args: str) -> str:
@@ -339,7 +381,8 @@ def main(argv: list[str] | None = None) -> int:
         pass
     model = Path(args.model).expanduser().resolve()
     container = Path(args.int8_container).expanduser().resolve()
-    prompts = DEFAULT_PROMPTS
+    base_prompts = BASE_PROMPTS
+    prompts, prompt_token_lengths = select_equal_prompts(model)
     started_utc = time.time()
     commit = git_value("rev-parse", "HEAD")
     clean_before_output = git_value("status", "--porcelain") == ""
@@ -380,7 +423,9 @@ def main(argv: list[str] | None = None) -> int:
         },
         "model": str(model),
         "int8_container": str(container),
+        "base_prompts": list(base_prompts),
         "prompts": list(prompts),
+        "prompt_token_lengths": prompt_token_lengths,
         "git": {
             "commit": commit,
             "clean_before_output": clean_before_output,
