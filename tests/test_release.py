@@ -1,11 +1,23 @@
 import json
+import os
 from pathlib import Path
+import subprocess
 import struct
+import sys
 import tempfile
 import unittest
 
 from sparseflow.cli import main
-from sparseflow.release import PRESETS, apply_preset, container_identity, doctor, model_identity
+from sparseflow.release import (
+    GIB,
+    PRESETS,
+    apply_preset,
+    container_identity,
+    doctor,
+    evaluate_memory_admission,
+    memory_snapshot,
+    model_identity,
+)
 
 
 def write_model(root: Path) -> Path:
@@ -84,6 +96,136 @@ class ReleaseTest(unittest.TestCase):
             self.assertEqual(container_identity(container)["metadata_files"], ["index.json", "manifest.json"])
             self.assertEqual(main(["preset", "stable"]), 0)
             self.assertEqual(set(PRESETS), {"stable", "low-memory", "experimental-batch"})
+
+    def test_memory_admission_preset_budgets_and_cache_override(self):
+        analysis = {
+            "model": {
+                "path": "/tmp/qwen36",
+                "hidden_size": 2048,
+                "num_hidden_layers": 40,
+            },
+            "footprint": {
+                "dense_resident_bytes": 7 * GIB,
+                "routed_expert_bytes": 60 * GIB,
+            },
+        }
+        container = {"weight_bytes": 30 * GIB, "execution_bytes": 126 * 1024**2}
+
+        stable_16 = evaluate_memory_admission(
+            analysis,
+            preset="stable",
+            effective_config=apply_preset("stable"),
+            container=container,
+            available_ram_bytes=16 * GIB,
+        )
+        stable_128 = evaluate_memory_admission(
+            analysis,
+            preset="stable",
+            effective_config=apply_preset("stable"),
+            container=container,
+            available_ram_bytes=128 * GIB,
+        )
+        low_16 = evaluate_memory_admission(
+            analysis,
+            preset="low-memory",
+            effective_config=apply_preset("low-memory"),
+            container=container,
+            available_ram_bytes=16 * GIB,
+        )
+        self.assertEqual(stable_16["status"], "fail")
+        self.assertEqual(stable_128["status"], "pass")
+        self.assertIn(low_16["status"], {"pass", "warn"})
+        self.assertEqual(
+            low_16["components"]["streaming_cache_bytes"],
+            4 * GIB,
+        )
+
+        low_8 = evaluate_memory_admission(
+            analysis,
+            preset="low-memory",
+            effective_config=apply_preset("low-memory", cache_bytes=8 * GIB),
+            container=container,
+            available_ram_bytes=16 * GIB,
+        )
+        self.assertEqual(low_8["components"]["streaming_cache_bytes"], 8 * GIB)
+        self.assertGreater(
+            low_8["required_ram_bytes"], low_16["required_ram_bytes"]
+        )
+
+    def test_memory_snapshot_cgroup_override_and_missing_source(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            proc = root / "meminfo"
+            proc.write_text(
+                f"MemTotal:       {131072 * 1024} kB\n"
+                f"MemAvailable:   {131072 * 1024} kB\n",
+                encoding="utf-8",
+            )
+            cgroup = root / "cgroup"
+            cgroup.mkdir()
+            (cgroup / "memory.max").write_text(str(16 * GIB), encoding="utf-8")
+            (cgroup / "memory.current").write_text(str(4 * GIB), encoding="utf-8")
+            limited = memory_snapshot(proc_meminfo_path=proc, cgroup_root=cgroup)
+            self.assertEqual(limited["source"], "cgroup")
+            self.assertEqual(limited["available_ram_bytes"], 12 * GIB)
+
+            override = memory_snapshot(
+                override_bytes=8 * GIB,
+                proc_meminfo_path=proc,
+                cgroup_root=cgroup,
+            )
+            self.assertEqual(override["source"], "override")
+            self.assertEqual(override["available_ram_bytes"], 8 * GIB)
+
+            missing = memory_snapshot(
+                proc_meminfo_path=root / "missing-meminfo",
+                cgroup_root=root / "missing-cgroup",
+            )
+            self.assertEqual(missing["source"], "unknown")
+            self.assertEqual(missing["available_ram_bytes"], 0)
+
+    def test_base_cli_subprocess_has_no_runtime_import_dependency(self):
+        with tempfile.TemporaryDirectory() as temp:
+            model = write_model(Path(temp) / "model")
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+            env["PYTHONNOUSERSITE"] = "1"
+
+            def run(*args: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, "-S", "-m", "sparseflow", *args],
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+
+            preset = run("preset", "stable", "--json")
+            inspect = run("inspect", str(model), "--json")
+            plan = run("plan", str(model), "--ram", "16", "--json")
+            doctor_result = run("doctor", str(model), "--json")
+            runtime = run(
+                "run",
+                str(model),
+                "--preset",
+                "stable",
+                "--int8-container",
+                str(Path(temp) / "missing-int8"),
+                "--prompt",
+                "test",
+            )
+
+            for result in (preset, inspect, plan, doctor_result):
+                combined = result.stdout + result.stderr
+                self.assertNotIn("Traceback", combined)
+                self.assertNotIn("ModuleNotFoundError", combined)
+            self.assertEqual(preset.returncode, 0)
+            self.assertEqual(inspect.returncode, 0)
+            self.assertEqual(plan.returncode, 0)
+            self.assertNotEqual(doctor_result.returncode, 2)
+            self.assertEqual(runtime.returncode, 2)
+            self.assertIn("requires the optional runtime dependencies", runtime.stderr)
+            self.assertNotIn("Traceback", runtime.stderr)
 
 
 if __name__ == "__main__":

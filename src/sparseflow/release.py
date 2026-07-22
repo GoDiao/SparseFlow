@@ -86,6 +86,280 @@ PRESETS: dict[str, RuntimePreset] = {
     ),
 }
 
+GIB = 1024**3
+_RUNTIME_PAGE_CACHE_RESERVE = 2 * GIB
+_MIN_RECOMMENDED_HEADROOM = 2 * GIB
+
+
+def _read_memory_value(path: Path) -> int | None:
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not value or value == "max":
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _proc_mem_available(path: Path = Path("/proc/meminfo")) -> int:
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return 0
+    for line in lines:
+        key, separator, value = line.partition(":")
+        if separator and key.strip() == "MemAvailable":
+            fields = value.strip().split()
+            if fields and fields[0].isdigit():
+                # /proc/meminfo reports kB, not bytes.
+                return int(fields[0]) * 1024
+    return 0
+
+
+def memory_snapshot(
+    *,
+    override_bytes: int | None = None,
+    proc_meminfo_path: str | Path = "/proc/meminfo",
+    cgroup_root: str | Path = "/sys/fs/cgroup",
+) -> dict[str, Any]:
+    """Read usable memory, respecting cgroup limits when available.
+
+    ``MemTotal`` is intentionally not used.  A process can only safely admit
+    work against MemAvailable, or against the smaller remaining cgroup limit.
+    The paths are injectable so the precedence rules can be tested without
+    changing the host or container configuration.
+    """
+
+    host_available = _proc_mem_available(Path(proc_meminfo_path))
+    root = Path(cgroup_root)
+    cgroup_limit = None
+    cgroup_current = None
+    for candidate in (root, root / "memory"):
+        limit_path = candidate / "memory.max"
+        current_path = candidate / "memory.current"
+        if not limit_path.is_file():
+            limit_path = candidate / "memory.limit_in_bytes"
+            current_path = candidate / "memory.usage_in_bytes"
+        limit = _read_memory_value(limit_path)
+        if limit is None:
+            continue
+        # cgroup v1 uses a very large sentinel for unlimited memory.
+        if limit >= (1 << 60):
+            continue
+        cgroup_limit = limit
+        cgroup_current = _read_memory_value(current_path)
+        break
+
+    cgroup_available = None
+    if cgroup_limit is not None:
+        cgroup_available = max(
+            0,
+            cgroup_limit - (cgroup_current or 0),
+        )
+
+    if override_bytes is not None:
+        available = max(0, int(override_bytes))
+        source = "override"
+    elif cgroup_available is not None:
+        available = min(host_available, cgroup_available) if host_available else cgroup_available
+        source = "cgroup"
+    elif host_available:
+        available = host_available
+        source = "proc-meminfo"
+    else:
+        available = 0
+        source = "unknown"
+
+    return {
+        "available_ram_bytes": available,
+        "source": source,
+        "host_available_bytes": host_available,
+        "cgroup_limit_bytes": cgroup_limit,
+        "cgroup_current_bytes": cgroup_current,
+        "cgroup_available_bytes": cgroup_available,
+    }
+
+
+def _estimate_state_bytes(analysis: dict[str, Any], ctx: int, batch_size: int) -> dict[str, int]:
+    """Estimate KV and recurrent state for the supported text runtime."""
+
+    model = analysis.get("model", {})
+    text = analysis.get("model", {})
+    # The analyzer intentionally exposes the architecture values needed by the
+    # planner.  Older/synthetic fixtures may omit some values; zero is safer
+    # than inventing a large state requirement in that case.
+    hidden = int(model.get("hidden_size") or 0)
+    layers = int(model.get("num_hidden_layers") or 0)
+    # Qwen3.6 fields are available in the analyzer's model record when present.
+    config_values = analysis.get("_text_config", text)
+    if "_text_config" not in analysis:
+        # The public analyzer keeps its output compact; read config.json here
+        # only for the small set of state-shape fields used by admission.
+        model_dir = analysis.get("model", {}).get("path")
+        if model_dir:
+            try:
+                config_values = load_config(model_dir).text_config
+            except (OSError, ValueError, KeyError):
+                config_values = text
+    kv_heads = int(config_values.get("num_key_value_heads") or 0)
+    head_dim = int(config_values.get("head_dim") or 0)
+    linear_key_heads = int(config_values.get("linear_num_key_heads") or 0)
+    linear_value_heads = int(config_values.get("linear_num_value_heads") or 0)
+    linear_key_dim = int(config_values.get("linear_key_head_dim") or 0)
+    linear_value_dim = int(config_values.get("linear_value_head_dim") or 0)
+    bytes_per_value = 2  # BF16 state in the current Qwen host runtime.
+    context = max(1, int(ctx))
+    batch = max(1, int(batch_size))
+    attention_kv = (
+        2 * layers * kv_heads * head_dim * context * bytes_per_value * batch
+    )
+    deltanet = (
+        layers
+        * linear_key_heads
+        * linear_value_heads
+        * linear_key_dim
+        * linear_value_dim
+        * bytes_per_value
+        * batch
+    )
+    # Keep a small fallback for synthetic fixtures and future configs that do
+    # not expose the DeltaNet dimensions in the public analyzer record.
+    if not attention_kv and hidden and layers:
+        attention_kv = layers * hidden * context * bytes_per_value // 16
+    return {
+        "attention_kv_state_bytes": attention_kv,
+        "deltanet_state_bytes": deltanet,
+        "kv_deltanet_state_bytes": attention_kv + deltanet,
+    }
+
+
+def memory_budget(
+    analysis: dict[str, Any] | None,
+    *,
+    preset: str,
+    effective_config: dict[str, Any],
+    container: dict[str, Any] | None = None,
+    model_dir: str | Path | None = None,
+    ctx: int = 4096,
+    batch_size: int = 4,
+) -> dict[str, Any]:
+    """Calculate the RAM admission contract for a public preset."""
+
+    if analysis is None:
+        return {
+            "available_ram_bytes": 0,
+            "required_ram_bytes": 0,
+            "recommended_ram_bytes": 0,
+            "headroom_bytes": 0,
+            "source": "unknown",
+            "status": "warn",
+            "reason": "model analysis unavailable; RAM admission is unknown",
+            "components": {},
+        }
+
+    footprint = analysis.get("footprint", {})
+    routed_bf16 = int(footprint.get("routed_expert_bytes") or 0)
+    dense = int(footprint.get("dense_resident_bytes") or 0)
+    resident_plan_bytes = None
+    if model_dir is not None:
+        try:
+            from .memory_loader import build_memory_load_plan
+
+            resident_plan_bytes = build_memory_load_plan(model_dir).bytes_for("resident")
+        except (OSError, ValueError, KeyError):
+            resident_plan_bytes = None
+    if resident_plan_bytes is not None and resident_plan_bytes > 0:
+        dense = int(resident_plan_bytes)
+
+    container_weights = int((container or {}).get("weight_bytes") or 0)
+    container_execution = int((container or {}).get("execution_bytes") or 0)
+    int8_experts = container_weights or (routed_bf16 + 1) // 2
+    row_sums = container_execution or (routed_bf16 // 512 if routed_bf16 else 0)
+    state_batch = batch_size if preset == "experimental-batch" else 1
+    state = _estimate_state_bytes(analysis, ctx, state_batch)
+
+    cache_bytes = int(effective_config.get("cache_bytes") or 0)
+    batch_state = 0
+    batch_workspace = 0
+    if preset == "experimental-batch":
+        # Fixed-cohort is intentionally conservative: it keeps a separate
+        # state row and a shared grouped workspace for the default four rows.
+        batch_state = max(0, state["kv_deltanet_state_bytes"] - _estimate_state_bytes(analysis, ctx, 1)["kv_deltanet_state_bytes"])
+        batch_workspace = (1 * GIB) + max(0, int(batch_size) - 1) * (256 * 1024**2)
+
+    components = {
+        "dense_resident_bytes": dense,
+        "resident_int8_expert_bytes": int8_experts if preset != "low-memory" else 0,
+        "streaming_cache_bytes": cache_bytes if preset == "low-memory" else 0,
+        "execution_row_sum_sidecar_bytes": row_sums,
+        "kv_deltanet_state_bytes": state["kv_deltanet_state_bytes"],
+        "activation_workspace_bytes": 1 * GIB,
+        "experimental_batch_state_bytes": batch_state,
+        "experimental_batch_workspace_bytes": batch_workspace,
+        "runtime_page_cache_reserve_bytes": _RUNTIME_PAGE_CACHE_RESERVE,
+    }
+    required = sum(components.values())
+    recommended = required + max(_MIN_RECOMMENDED_HEADROOM, required // 10)
+    return {
+        "required_ram_bytes": required,
+        "recommended_ram_bytes": recommended,
+        "components": components,
+        "context_tokens": int(ctx),
+        "batch_size": int(batch_size),
+        "estimates": {
+            "dense_source": "memory-native-plan" if resident_plan_bytes else "model-footprint",
+            "int8_expert_source": "container" if container_weights else "bf16-half-estimate",
+            "row_sum_source": "container" if container_execution else "bf16-ratio-estimate",
+        },
+    }
+
+
+def evaluate_memory_admission(
+    analysis: dict[str, Any] | None,
+    *,
+    preset: str,
+    effective_config: dict[str, Any],
+    container: dict[str, Any] | None = None,
+    model_dir: str | Path | None = None,
+    ctx: int = 4096,
+    batch_size: int = 4,
+    available_ram_bytes: int | None = None,
+) -> dict[str, Any]:
+    budget = memory_budget(
+        analysis,
+        preset=preset,
+        effective_config=effective_config,
+        container=container,
+        model_dir=model_dir,
+        ctx=ctx,
+        batch_size=batch_size,
+    )
+    snapshot = memory_snapshot(override_bytes=available_ram_bytes)
+    available = snapshot["available_ram_bytes"]
+    required = int(budget.get("required_ram_bytes", 0))
+    recommended = int(budget.get("recommended_ram_bytes", 0))
+    if budget.get("status") == "warn" and budget.get("reason"):
+        status = "warn"
+    elif available <= 0:
+        status = "warn"
+    elif available < required:
+        status = "fail"
+    elif available < recommended:
+        status = "warn"
+    else:
+        status = "pass"
+    return {
+        **snapshot,
+        **budget,
+        "available_ram_bytes": available,
+        "headroom_bytes": available - required if available else 0,
+        "status": status,
+    }
+
 
 def get_preset(name: str) -> RuntimePreset:
     try:
@@ -257,6 +531,9 @@ def doctor(
     cache_bytes: int | None = None,
     check_native: bool = False,
     full_payload_hash: bool = False,
+    available_ram_bytes: int | None = None,
+    ctx: int = 4096,
+    batch_size: int = 4,
 ) -> dict[str, Any]:
     """Run all preflight checks without constructing a model runtime."""
 
@@ -340,6 +617,18 @@ def doctor(
             except Exception as exc:
                 add("int8_container", "fail", f"{type(exc).__name__}: {exc}")
 
+    memory = evaluate_memory_admission(
+        analysis,
+        preset=preset,
+        effective_config=effective_config,
+        container=container,
+        model_dir=root,
+        ctx=ctx,
+        batch_size=batch_size,
+        available_ram_bytes=available_ram_bytes,
+    )
+    add("memory_admission", memory["status"], memory)
+
     native = None
     if check_native and cpu["avx512_vnni"]:
         native = _check_native_extension()
@@ -362,6 +651,7 @@ def doctor(
         "analysis": analysis,
         "container": container,
         "cpu": cpu,
+        "memory": memory,
         "checks": checks,
         "errors": len(errors),
         "warnings": len(warnings),

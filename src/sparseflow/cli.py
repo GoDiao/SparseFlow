@@ -28,16 +28,6 @@ from .memory_loader import (
 )
 from .moe_probe import compare_expert_paths, compare_moe_cache_paths, compare_moe_paths
 from .moe_runtime import compare_multilayer_moe_paths
-from .text_runtime import (
-    Qwen36TextRuntime,
-    compare_bf16_int8_quantization,
-    compare_int8_native_quantization,
-    compare_int8_reference_paths,
-    compare_int8_native_paths,
-    compare_sparseflow_policy_paths,
-    compare_sparseflow_runtime_paths,
-    compare_text_paths,
-)
 from .plan import build_plan
 from .policy_benchmark import discover_trace_paths, run_policy_sweep
 from .release import (
@@ -58,6 +48,58 @@ from .route_trace import (
 from .trace import load_route_trace
 
 
+class RuntimeExtrasError(ValueError):
+    """Raised when a command needs the optional torch runtime."""
+
+
+def _load_text_runtime(command: str):
+    """Import runtime code only for commands that actually execute a model."""
+
+    try:
+        import torch  # noqa: F401
+        import transformers  # noqa: F401
+        import safetensors  # noqa: F401
+        import accelerate  # noqa: F401
+        from . import text_runtime
+    except ImportError as exc:
+        raise RuntimeExtrasError(
+            f"{command} requires the optional runtime dependencies (torch, "
+            "transformers, safetensors, accelerate); install them with "
+            "`pip install -e '.[runtime]'`"
+        ) from exc
+    return text_runtime
+
+
+# Keep these names as lazy compatibility shims for callers that patch the CLI
+# boundary in tests.  They do not import torch until the function is called.
+def compare_text_paths(*args: Any, **kwargs: Any):
+    return _load_text_runtime("text-check").compare_text_paths(*args, **kwargs)
+
+
+def compare_sparseflow_runtime_paths(*args: Any, **kwargs: Any):
+    return _load_text_runtime("runtime-check").compare_sparseflow_runtime_paths(*args, **kwargs)
+
+
+def compare_int8_reference_paths(*args: Any, **kwargs: Any):
+    return _load_text_runtime("int8-reference-check").compare_int8_reference_paths(*args, **kwargs)
+
+
+def compare_int8_native_paths(*args: Any, **kwargs: Any):
+    return _load_text_runtime("int8-reference-check").compare_int8_native_paths(*args, **kwargs)
+
+
+def compare_bf16_int8_quantization(*args: Any, **kwargs: Any):
+    return _load_text_runtime("int8-quality-check").compare_bf16_int8_quantization(*args, **kwargs)
+
+
+def compare_int8_native_quantization(*args: Any, **kwargs: Any):
+    return _load_text_runtime("int8-quality-check").compare_int8_native_quantization(*args, **kwargs)
+
+
+def compare_sparseflow_policy_paths(*args: Any, **kwargs: Any):
+    return _load_text_runtime("policy-check").compare_sparseflow_policy_paths(*args, **kwargs)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sparseflow")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -69,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     plan_p = sub.add_parser("plan", help="Create a Disk/RAM/VRAM placement plan.")
     plan_p.add_argument("model")
     plan_p.add_argument("--ram", type=float, default=None, help="RAM budget in decimal GB.")
+    plan_p.add_argument("--available-ram", help="Override available RAM used by the planner, e.g. 16GiB.")
     plan_p.add_argument("--ctx", type=int, default=4096, help="Context length for memory projection.")
     plan_p.add_argument("--reserve", type=float, default=2.5, help="Page-cache/runtime reserve in decimal GB.")
     plan_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
@@ -88,6 +131,14 @@ def main(argv: list[str] | None = None) -> int:
     doctor_p.add_argument("--preset", choices=tuple(sorted(PRESETS)), default="stable")
     doctor_p.add_argument("--int8-container")
     doctor_p.add_argument("--cache-bytes", help="Override low-memory cache budget, e.g. 4GiB.")
+    doctor_p.add_argument("--available-ram", help="Override available RAM for admission, e.g. 16GiB.")
+    doctor_p.add_argument("--ctx", type=int, default=4096, help="Context length for RAM admission.")
+    doctor_p.add_argument(
+        "--batch-size",
+        type=int,
+        default=4,
+        help="Fixed cohort size used by experimental-batch RAM admission.",
+    )
     doctor_p.add_argument("--check-native", action="store_true", help="Build and load the native extension.")
     doctor_p.add_argument("--full-payload-hash", action="store_true", help="Hash all model payload bytes; expensive.")
     doctor_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
@@ -495,6 +546,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "doctor":
             cache_bytes = _parse_single_byte_budget(args.cache_bytes) if args.cache_bytes else None
+            available_ram = (
+                _parse_single_byte_budget(args.available_ram, flag="--available-ram")
+                if args.available_ram
+                else None
+            )
+            if args.ctx <= 0:
+                raise ValueError("--ctx must be positive")
+            if args.batch_size <= 0:
+                raise ValueError("--batch-size must be positive")
             result = doctor(
                 args.model,
                 preset=args.preset,
@@ -502,6 +562,9 @@ def main(argv: list[str] | None = None) -> int:
                 cache_bytes=cache_bytes,
                 check_native=args.check_native,
                 full_payload_hash=args.full_payload_hash,
+                available_ram_bytes=available_ram,
+                ctx=args.ctx,
+                batch_size=args.batch_size,
             )
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_doctor(result))
             return 0 if result["ready"] else 1
@@ -542,6 +605,8 @@ def main(argv: list[str] | None = None) -> int:
             print(encoded if args.json else _format_prepare_int8(result))
             return 0
         if args.command == "run":
+            runtime_api = _load_text_runtime("run")
+            Qwen36TextRuntime = runtime_api.Qwen36TextRuntime
             cache_bytes = _parse_single_byte_budget(args.cache_bytes) if args.cache_bytes else None
             config = apply_preset(
                 args.preset,
@@ -628,7 +693,18 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_inspect(result))
             return 0
         if args.command == "plan":
-            result = build_plan(args.model, ram_gb=args.ram, ctx=args.ctx, reserve_gb=args.reserve)
+            available_ram = (
+                _parse_single_byte_budget(args.available_ram, flag="--available-ram")
+                if args.available_ram
+                else None
+            )
+            result = build_plan(
+                args.model,
+                ram_gb=args.ram,
+                ctx=args.ctx,
+                reserve_gb=args.reserve,
+                available_memory=available_ram,
+            )
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_plan(result))
             return 0 if not result["warnings"] else 1
         if args.command == "native-plan":
@@ -858,6 +934,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         if args.command == "text-generate":
+            runtime_api = _load_text_runtime("text-generate")
+            Qwen36TextRuntime = runtime_api.Qwen36TextRuntime
             cache_bytes = _parse_single_byte_budget(args.cache_bytes) if args.cache_bytes else None
             mode = (
                 args.expert_backend.removeprefix("sparseflow-")
@@ -1080,6 +1158,16 @@ def _format_doctor(result: dict[str, Any]) -> str:
         f"errors       {result['errors']}",
         f"warnings     {result['warnings']}",
     ]
+    memory = result.get("memory")
+    if memory:
+        lines.extend(
+            [
+                f"ram          {memory['status']} from {memory['source']}",
+                f"ram required {format_bytes(memory['required_ram_bytes'])}",
+                f"ram advised  {format_bytes(memory['recommended_ram_bytes'])}",
+                f"ram avail    {format_bytes(memory['available_ram_bytes'])}",
+            ]
+        )
     for check in result["checks"]:
         lines.append(f"{check['status']:<12} {check['id']}: {check['detail']}")
     return "\n".join(lines)
@@ -1317,10 +1405,10 @@ def _format_moe_cache_check(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _parse_single_byte_budget(value: str) -> int:
+def _parse_single_byte_budget(value: str, *, flag: str = "--cache-bytes") -> int:
     budgets = parse_byte_budgets(value)
     if len(budgets) != 1:
-        raise ValueError("--cache-bytes accepts exactly one byte budget")
+        raise ValueError(f"{flag} accepts exactly one byte budget")
     return budgets[0]
 
 
