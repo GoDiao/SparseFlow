@@ -135,3 +135,38 @@ closure-fix commit, Doctor JSON, runtime identity, and the unchanged Public
 Alpha boundary. `[Main Dev]`
 
 <!-- [Main Dev] -->
+
+### 6. Post-acceptance micro-fixes
+
+After the first closure evidence was reviewed, three small release-boundary
+issues were fixed before the next formal matrix:
+
+- `_load_text_runtime()` now catches both `ImportError` and `OSError`. A
+  broken installed PyTorch binary, such as an unloadable `c10.dll`, therefore
+  produces the same clean optional-runtime error as a missing dependency.
+- The no-site-packages `plan` subprocess test now accepts the existing exit
+  code `1` resource-warning contract and rejects only exit code `2`, which is
+  the runtime-dependency failure code being tested.
+- Experimental-batch RAM accounting keeps one session in
+  `kv_deltanet_state_bytes` and adds exactly `(batch_size - 1)` session states
+  in `experimental_batch_state_bytes`. The previous implementation multiplied
+  the canonical state by the batch size and then added the extra states again.
+
+The regression tests cover the broken-runtime import and the B=4 state
+accounting. Local verification after these fixes:
+
+```text
+PYTHONPATH=src python -S -m unittest discover -s tests -p 'test_release.py'
+Ran 7 tests
+OK
+
+PYTHONPATH=src python -m unittest discover -s tests -p 'test_*.py'
+Ran 100 tests
+OK
+```
+
+`compileall` and `git diff --check` also pass. These fixes do not change the
+model weights, runtime arithmetic, cache policy, benchmark prompts, or formal
+Stage 7.9 result data, so the existing matrix is not rerun in this change.
+The next formal matrix must record the new micro-fix commit as its clean
+runtime and provenance identity. `[Main Dev]`

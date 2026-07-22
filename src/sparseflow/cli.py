@@ -61,7 +61,7 @@ def _load_text_runtime(command: str):
         import safetensors  # noqa: F401
         import accelerate  # noqa: F401
         from . import text_runtime
-    except ImportError as exc:
+    except (ImportError, OSError) as exc:
         raise RuntimeExtrasError(
             f"{command} requires the optional runtime dependencies (torch, "
             "transformers, safetensors, accelerate); install them with "

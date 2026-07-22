@@ -279,16 +279,18 @@ def memory_budget(
     container_execution = int((container or {}).get("execution_bytes") or 0)
     int8_experts = container_weights or (routed_bf16 + 1) // 2
     row_sums = container_execution or (routed_bf16 // 512 if routed_bf16 else 0)
-    state_batch = batch_size if preset == "experimental-batch" else 1
-    state = _estimate_state_bytes(analysis, ctx, state_batch)
+    # Keep the canonical component as one session's state.  A fixed cohort
+    # accounts for the additional rows separately below; this prevents the
+    # batch multiplier from being counted twice in the total.
+    state = _estimate_state_bytes(analysis, ctx, 1)
 
     cache_bytes = int(effective_config.get("cache_bytes") or 0)
     batch_state = 0
     batch_workspace = 0
     if preset == "experimental-batch":
-        # Fixed-cohort is intentionally conservative: it keeps a separate
-        # state row and a shared grouped workspace for the default four rows.
-        batch_state = max(0, state["kv_deltanet_state_bytes"] - _estimate_state_bytes(analysis, ctx, 1)["kv_deltanet_state_bytes"])
+        # Fixed-cohort keeps one additional KV/DeltaNet state row per extra
+        # session, plus the shared grouped workspace.
+        batch_state = max(0, int(batch_size) - 1) * state["kv_deltanet_state_bytes"]
         batch_workspace = (1 * GIB) + max(0, int(batch_size) - 1) * (256 * 1024**2)
 
     components = {

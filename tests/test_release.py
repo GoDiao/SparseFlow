@@ -1,4 +1,5 @@
 import json
+import builtins
 import os
 from pathlib import Path
 import subprocess
@@ -6,8 +7,10 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from sparseflow.cli import main
+from sparseflow.cli import RuntimeExtrasError, _load_text_runtime
 from sparseflow.release import (
     GIB,
     PRESETS,
@@ -152,6 +155,44 @@ class ReleaseTest(unittest.TestCase):
             low_8["required_ram_bytes"], low_16["required_ram_bytes"]
         )
 
+        batch_one = evaluate_memory_admission(
+            analysis,
+            preset="experimental-batch",
+            effective_config=apply_preset("experimental-batch"),
+            container=container,
+            batch_size=1,
+            available_ram_bytes=128 * GIB,
+        )
+        batch_four = evaluate_memory_admission(
+            analysis,
+            preset="experimental-batch",
+            effective_config=apply_preset("experimental-batch"),
+            container=container,
+            batch_size=4,
+            available_ram_bytes=128 * GIB,
+        )
+        one_state = batch_one["components"]["kv_deltanet_state_bytes"]
+        self.assertEqual(
+            batch_four["components"]["kv_deltanet_state_bytes"],
+            one_state,
+        )
+        self.assertEqual(
+            batch_four["components"]["experimental_batch_state_bytes"],
+            3 * one_state,
+        )
+
+    def test_runtime_import_oserror_is_cleanly_wrapped(self):
+        real_import = builtins.__import__
+
+        def broken_torch_import(name, *args, **kwargs):
+            if name == "torch":
+                raise OSError("c10.dll could not be loaded")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=broken_torch_import):
+            with self.assertRaisesRegex(RuntimeExtrasError, "optional runtime dependencies"):
+                _load_text_runtime("run")
+
     def test_memory_snapshot_cgroup_override_and_missing_source(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -221,7 +262,9 @@ class ReleaseTest(unittest.TestCase):
                 self.assertNotIn("ModuleNotFoundError", combined)
             self.assertEqual(preset.returncode, 0)
             self.assertEqual(inspect.returncode, 0)
-            self.assertEqual(plan.returncode, 0)
+            # plan may return 1 for an existing resource warning; only the
+            # runtime dependency error code 2 is relevant to this test.
+            self.assertNotEqual(plan.returncode, 2)
             self.assertNotEqual(doctor_result.returncode, 2)
             self.assertEqual(runtime.returncode, 2)
             self.assertIn("requires the optional runtime dependencies", runtime.stderr)
