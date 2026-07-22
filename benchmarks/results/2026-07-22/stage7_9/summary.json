@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_9_public_alpha_summary",
+  "stage": "7.9",
+  "agent": "Main Dev",
+  "attribution": "[Main Dev]",
+  "code_commit": "04babf8e395f6bc7f1e954cfd1e71a7ebcbb6ffd",
+  "model": "model/Qwen3.6-35B-A3B",
+  "container": ".cache/stage7_5/qwen36-int8",
+  "presets": {
+    "stable": "INT8 native resident hybrid",
+    "low-memory": "INT8 native single-request streaming S1 LRU, prefetch disabled",
+    "experimental-batch": "INT8 native resident grouped fixed cohort, opt-in",
+    "shared-streaming-batching": "disabled / known limitation",
+    "pure-fused": "diagnostics only"
+  },
+  "new_validation": {
+    "smoke_32": {
+      "path": "validation_smoke.json",
+      "verification": "validation_smoke.verification.json",
+      "clean_before_output": true,
+      "all_exact": true,
+      "full_logits_persisted": false
+    },
+    "standard_128": {
+      "path": "validation_standard.json",
+      "verification": "validation_standard.verification.json",
+      "all_exact": true,
+      "full_logits_persisted": false
+    },
+    "endurance_512": {
+      "path": "validation_endurance.json",
+      "verification": "validation_endurance.verification.json",
+      "all_exact": true,
+      "full_logits_persisted": false
+    }
+  },
+  "inherited_formal_evidence": {
+    "quality": "docs/results/qwen36_stage7_5_6_formal_20260716.md",
+    "quality_rows": 60,
+    "native_resident_streaming_predictions_equal": "60/60",
+    "grouped_resident": "docs/results/qwen36_stage7_8_formal_acceptance_20260722.md",
+    "grouped_resident_status": "experimental opt-in",
+    "streaming_shared_batch_status": "NO-GO"
+  },
+  "release_gates": {
+    "doctor_model_headers": true,
+    "doctor_complete_40_layer_container": true,
+    "offline_row_sums": true,
+    "native_extension_build": true,
+    "single_request_streaming_budget": true,
+    "smoke_standard_endurance_exact": true,
+    "compact_result_artifacts": true,
+    "quick_start_documented": true
+  },
+  "decision": "public-alpha-ready-with-experimental-grouped-and-disabled-shared-streaming",
+  "known_limitations": [
+    "shared streaming batching/subcohort remains disabled",
+    "grouped execution requires equal-length fixed cohorts",
+    "attention, Gated DeltaNet, KV state, tokenizer, and generation orchestration remain host-runtime owned",
+    "native W8A8 requires AVX-512 VNNI"
+  ]
+}

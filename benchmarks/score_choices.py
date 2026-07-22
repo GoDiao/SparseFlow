@@ -164,6 +164,12 @@ def main(argv: list[str] | None = None) -> int:
         choices=("batch", "sequential"),
         default="batch",
     )
+    parser.add_argument(
+        "--native-dispatch",
+        choices=("legacy", "hybrid", "grouped"),
+        default="legacy",
+        help="SparseFlow INT8 dispatch contract; grouped is fixed-cohort experimental.",
+    )
     args = parser.parse_args(argv)
 
     import os
@@ -216,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("SparseFlow reference choice scoring currently requires bf16")
         if args.backend.startswith("int8-") and not args.int8_container:
             parser.error("INT8 backends require --int8-container")
+        if args.native_dispatch != "legacy" and not args.backend.startswith("int8-native"):
+            parser.error("hybrid/grouped dispatch requires an INT8 native backend")
         from sparseflow.text_runtime import Qwen36TextRuntime
 
         storage = {
@@ -239,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
             prefetch_policy="none",
             telemetry_level="none",
             experts_implementation="eager",
+            native_dispatch=args.native_dispatch,
         )
         model_load_seconds = time.perf_counter() - model_start
         tokenizer_load_seconds = 0.0
@@ -263,6 +272,9 @@ def main(argv: list[str] | None = None) -> int:
             "threads": torch.get_num_threads(),
             "expert_storage": (
                 sparseflow_runtime.expert_storage if sparseflow_runtime is not None else "bf16"
+            ),
+            "native_dispatch": (
+                sparseflow_runtime.native_dispatch if sparseflow_runtime is not None else "legacy"
             ),
         },
         "host": host_snapshot(),

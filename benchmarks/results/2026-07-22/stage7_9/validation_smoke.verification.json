@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_9_verification",
+  "agent": "Benchmark",
+  "checks": {
+    "kind": true,
+    "agent": true,
+    "protocol": true,
+    "samples": true,
+    "gates_exact": true,
+    "gates_budget": true,
+    "gates_compact": true,
+    "routes_compact": true,
+    "model_identity": true,
+    "container_identity": true
+  },
+  "verification_passed": true,
+  "failures": []
+}

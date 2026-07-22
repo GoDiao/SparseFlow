@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -134,7 +135,24 @@ def compare_paths(resident: dict[str, Any], streaming: dict[str, Any], level: st
 
 
 def compact_path(result: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in result.items() if key != "captured_logits_in_process"}
+    route_audit = result.get("route_audit") or []
+    normalized_routes = [
+        {key: value for key, value in record.items() if key != "expert_ids"}
+        for record in route_audit
+    ]
+    route_payload = json.dumps(
+        normalized_routes,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    compact = {
+        key: value for key, value in result.items()
+        if key not in {"captured_logits_in_process", "route_audit"}
+    }
+    compact["route_audit"] = normalized_routes
+    compact["route_fingerprint"] = hashlib.sha256(route_payload).hexdigest()
+    return compact
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -222,6 +240,12 @@ def main(argv: list[str] | None = None) -> int:
                 "captured_logits_in_process" not in item
                 for sample in samples
                 for item in (sample["resident"], sample["streaming"])
+            ),
+            "routes_compact": all(
+                "expert_ids" not in record
+                for sample in samples
+                for side in ("resident", "streaming")
+                for record in sample[side]["route_audit"]
             ),
         },
     }

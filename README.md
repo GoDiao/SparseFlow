@@ -89,6 +89,26 @@ PYTHONPATH=src python -m sparseflow run "$MODEL" \
 The grouped preset requires equal encoded prompt lengths, as required by the
 fixed-cohort harness. Shared streaming batching is intentionally unavailable.
 
+## Quality Evaluation
+
+The frozen 60-question HellaSwag/ARC/MMLU manifest can be scored with the same
+native hybrid dispatch used by the stable preset. The command stores choice
+scores and compact metadata, not generation logits:
+
+```bash
+PYTHONPATH=src python -m benchmarks.score_choices \
+  --model "$MODEL" \
+  --data benchmarks/manifests/quality_formal_v1.jsonl \
+  --backend int8-native --native-dispatch hybrid \
+  --int8-container "$INT8" --threads 10 \
+  --output results/stage7_9_quality_hybrid.json
+```
+
+For the low-memory quality path use `--backend int8-native-streaming`; keep
+`--native-dispatch hybrid` and the default 4 GiB cache. The published 60-row
+baseline is documented in
+`docs/results/qwen36_stage7_5_6_formal_20260716.md`.
+
 ## Public Alpha Path Status
 
 | Path | Status |

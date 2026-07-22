@@ -20,6 +20,12 @@ def verify(result: dict[str, Any]) -> dict[str, Any]:
         "gates_exact": bool(result.get("gates", {}).get("all_exact")),
         "gates_budget": bool(result.get("gates", {}).get("streaming_cache_budget_respected")),
         "gates_compact": bool(result.get("gates", {}).get("no_full_logits_persisted")),
+        "routes_compact": all(
+            "expert_ids" not in record
+            for sample in result.get("samples", [])
+            for side in ("resident", "streaming")
+            for record in sample.get(side, {}).get("route_audit", [])
+        ),
         "model_identity": bool(result.get("model", {}).get("metadata_sha256")),
         "container_identity": bool(result.get("container", {}).get("metadata_sha256")),
     }
