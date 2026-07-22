@@ -54,4 +54,17 @@ Raw results live under
 `benchmarks/results/2026-07-22/stage7_8/`; the result document and verifier
 are the authoritative completion records.
 
+## Formal acceptance addendum
+
+The initial short cohort is not the final resident gate. The formal harness
+`benchmarks/run_stage7_8_formal.py` now requires B=1/4/8, at least 32 generated
+tokens, three same-process ABBA repetitions, full-logit comparison, route and
+behavior equality, latency P50/P95, and runtime identity checks. The formal
+result is recorded separately in
+`docs/results/qwen36_stage7_8_formal_acceptance_20260722.md`.
+
+The formal resident gate passed. This does not promote grouped dispatch to the
+default and does not change the streaming NO-GO: resident and streaming remain
+separate decisions.
+
 <!-- [Main Dev] -->

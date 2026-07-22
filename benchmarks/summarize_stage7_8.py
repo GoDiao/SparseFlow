@@ -27,6 +27,7 @@ def summarize(
     cohort_results: list[dict[str, Any]],
     streaming: dict[str, Any],
     previous_stage7_7: dict[str, Any],
+    formal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     grouped_batches = _by_batch(grouped)
     operator_exact = all(
@@ -150,6 +151,36 @@ def summarize(
     if any(not item["independent_logit_fingerprints_exact"] for item in resident_cells):
         no_go_reasons.append("independent-session full logits are not bit-exact under batched ATen execution")
 
+    formal_summary = None
+    if formal is not None:
+        formal_batches = {
+            int(item["batch_size"]): item for item in formal.get("batches", [])
+        }
+        formal_summary = {
+            "all_gates_pass": bool(formal.get("all_gates_pass")),
+            "commit": formal.get("git", {}).get("commit"),
+            "clean_before_output": bool(formal.get("git", {}).get("clean_before_output")),
+            "protocol": formal.get("protocol"),
+            "runtime_identity": bool(formal.get("gates", {}).get("all_runtime_identity_exact")),
+            "full_logits_exact": bool(formal.get("gates", {}).get("all_paired_full_logits_exact")),
+            "behavior_exact": bool(formal.get("gates", {}).get("all_paired_behavior_exact")),
+            "repeated_exact": bool(formal.get("gates", {}).get("all_repeats_exact")),
+            "batches": {
+                str(size): {
+                    "grouped_tok_per_second": item["grouped"]["median_aggregate_decode_tok_per_second"],
+                    "fused_tok_per_second": item["fused"]["median_aggregate_decode_tok_per_second"],
+                    "grouped_p50_seconds": item["grouped"]["token_latency_p50_seconds"],
+                    "grouped_p95_seconds": item["grouped"]["token_latency_p95_seconds"],
+                    "fused_p50_seconds": item["fused"]["token_latency_p50_seconds"],
+                    "fused_p95_seconds": item["fused"]["token_latency_p95_seconds"],
+                    "paired_all_exact": bool(item["paired_all_exact"]),
+                }
+                for size, item in sorted(formal_batches.items())
+            },
+        }
+        if not formal_summary["all_gates_pass"]:
+            no_go_reasons.append("formal resident acceptance gate failed")
+
     return {
         "schema_version": 1,
         "kind": "sparseflow_stage7_8_summary",
@@ -165,6 +196,7 @@ def summarize(
             "cells": streaming_cells,
             "gate": streaming_gate,
         },
+        "formal_resident": formal_summary,
         "gates": {
             "operator": operator["exact_against_fused_all_batches"]
             and operator["b1_no_regression"]
@@ -195,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cohort", action="append", required=True)
     parser.add_argument("--streaming", required=True)
     parser.add_argument("--previous-stage7-7", required=True)
+    parser.add_argument("--formal")
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     result = summarize(
@@ -202,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         [load_json(Path(path)) for path in args.cohort],
         load_json(Path(args.streaming)),
         load_json(Path(args.previous_stage7_7)),
+        load_json(Path(args.formal)) if args.formal else None,
     )
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

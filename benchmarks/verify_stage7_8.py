@@ -155,6 +155,17 @@ def verify(
         formal.get("git", {}).get("commit") == expected_formal_commit
         and bool(formal.get("git", {}).get("clean_before_output"))
     )
+    formal_summary = summary.get("formal_resident", {})
+    checks["summary_formal_matches"] = (
+        formal_summary.get("all_gates_pass") == bool(formal.get("all_gates_pass"))
+        and formal_summary.get("commit") == formal.get("git", {}).get("commit")
+        and formal_summary.get("full_logits_exact")
+        == bool(formal.get("gates", {}).get("all_paired_full_logits_exact"))
+        and formal_summary.get("behavior_exact")
+        == bool(formal.get("gates", {}).get("all_paired_behavior_exact"))
+        and formal_summary.get("repeated_exact")
+        == bool(formal.get("gates", {}).get("all_repeats_exact"))
+    )
     for name, passed in checks.items():
         if not passed:
             reasons.append(name)

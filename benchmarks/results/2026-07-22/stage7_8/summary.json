@@ -1714,6 +1714,56 @@
     ],
     "gate": false
   },
+  "formal_resident": {
+    "all_gates_pass": true,
+    "commit": "3f935f24025e2b17af61ab6e92a099947ceb188f",
+    "clean_before_output": true,
+    "protocol": {
+      "batches": [
+        1,
+        4,
+        8
+      ],
+      "max_new_tokens": 32,
+      "repeats": 3,
+      "schedule": "ABBA",
+      "threads": 10,
+      "quality_gate": "equivalent-32-token-long-generation"
+    },
+    "runtime_identity": true,
+    "full_logits_exact": true,
+    "behavior_exact": true,
+    "repeated_exact": true,
+    "batches": {
+      "1": {
+        "grouped_tok_per_second": 1.9223654137521553,
+        "fused_tok_per_second": 1.8982318655969306,
+        "grouped_p50_seconds": 0.5230820960000528,
+        "grouped_p95_seconds": 0.6263159170002837,
+        "fused_p50_seconds": 0.52055308350009,
+        "fused_p95_seconds": 0.5915935359996638,
+        "paired_all_exact": true
+      },
+      "4": {
+        "grouped_tok_per_second": 4.2569897871070195,
+        "fused_tok_per_second": 3.8463329808828255,
+        "grouped_p50_seconds": 0.9116483785001037,
+        "grouped_p95_seconds": 1.139495897249617,
+        "fused_p50_seconds": 1.0341974845005097,
+        "fused_p95_seconds": 1.1939434434998475,
+        "paired_all_exact": true
+      },
+      "8": {
+        "grouped_tok_per_second": 5.564967963901896,
+        "fused_tok_per_second": 4.8519890730234785,
+        "grouped_p50_seconds": 1.4955056999997396,
+        "grouped_p95_seconds": 2.0355501922495023,
+        "fused_p50_seconds": 1.5922324324992587,
+        "fused_p95_seconds": 2.030930755749978,
+        "paired_all_exact": true
+      }
+    }
+  },
   "gates": {
     "operator": true,
     "resident_kernel": true,

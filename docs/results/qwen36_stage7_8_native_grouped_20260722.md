@@ -100,6 +100,12 @@ The structured verifier passed all integrity, exactness, budget, accounting,
 and lease checks while correctly reporting `all_pass=false` for the explicit
 performance/streaming NO-GO reasons.
 
+The later formal resident acceptance expanded the resident evidence to B=1/4/8
+with 32-token same-process ABBA repetitions. It passed full-logit, route,
+behavior, repeat, and runtime-identity gates; see
+`docs/results/qwen36_stage7_8_formal_acceptance_20260722.md`. It does not alter
+the separate streaming NO-GO.
+
 Authoritative files:
 
 - `benchmarks/results/2026-07-22/stage7_8/grouped_operator.json`
@@ -108,5 +114,6 @@ Authoritative files:
 - `benchmarks/results/2026-07-22/stage7_8/streaming_subcohort_ratio025.json`
 - `benchmarks/results/2026-07-22/stage7_8/summary.json`
 - `benchmarks/results/2026-07-22/stage7_8/verification.json`
+- `benchmarks/results/2026-07-22/stage7_8/formal_resident_abba.json`
 
 <!-- [Main Dev] -->
