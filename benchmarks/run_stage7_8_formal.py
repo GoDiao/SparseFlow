@@ -152,7 +152,14 @@ def runtime_identity(runtime: Qwen36TextRuntime) -> dict[str, Any]:
 
 
 def route_fingerprint(records: Any) -> str:
-    return json_hash(records)
+    # ``RouteAudit.ordinal`` is process-local bookkeeping and intentionally
+    # increases across repeated generations.  It must not make identical
+    # route traces look different.
+    normalized = [
+        {key: value for key, value in record.items() if key != "ordinal"}
+        for record in records
+    ]
+    return json_hash(normalized)
 
 
 def run_observation(
