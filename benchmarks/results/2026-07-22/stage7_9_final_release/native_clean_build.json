@@ -1,0 +1,79 @@
+{
+  "release_code_commit": "ea5033d4031c23e2b633fa593730a644ec0037df",
+  "branch": "main",
+  "agent": "Main Dev",
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "metadata_sha256": "75c3ff47bb3f96eee08facdf700ccec7da9a0b37e8c1d4003e251eb05542d735",
+    "config_sha256": null,
+    "index_sha256": null,
+    "payload_size_sha256": "b7bd42af587e204ba1b14084f5a35a7fe10fd1e20f4ae1b0cf452f4362f415c8"
+  },
+  "container": {
+    "path": "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+    "metadata_sha256": "ed1968b1157a57f86982b34c71db206a4edb7fc911289dbc89641ccbe1b9f898",
+    "weight_bytes": 32296304640,
+    "execution_bytes": 125992960,
+    "format_id": "canonical-int8-v1"
+  },
+  "host": {
+    "platform": "Linux-5.15.0-113-generic-x86_64-with-glibc2.35",
+    "kernel": "5.15.0-113-generic",
+    "python": "3.12.11",
+    "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
+    "logical_cpus": 20,
+    "memory_total_bytes": 135066402816,
+    "threads": 10,
+    "omp_num_threads": "10",
+    "mkl_num_threads": "10",
+    "filesystem": "/"
+  },
+  "provenance": {
+    "source_tree_clean_at_experiment_start": true,
+    "result_directory_writes_expected": true,
+    "raw_results_directory": "/root/workspace/cache/final_release_raw",
+    "physical_read_bytes_policy": "not independently sampled by the public-alpha run command"
+  },
+  "kind": "sparseflow_stage7_9_native_clean_build",
+  "cache": "/root/workspace/cache/release-native",
+  "compiled_from_empty_cache": true,
+  "build_command": "sparseflow doctor ... --check-native",
+  "status": "pass",
+  "artifacts": [
+    {
+      "name": ".ninja_deps",
+      "bytes": 320,
+      "sha256": "1a50ef246bdda897f25b2155356ce75dda735204493cdaf863e2a9d67367f6ca"
+    },
+    {
+      "name": ".ninja_log",
+      "bytes": 262,
+      "sha256": "aa6cee3e4f00b9e709cbb5d9ecb87c0c5487a6d05d1c152adc044b262392e06f"
+    },
+    {
+      "name": "build.ninja",
+      "bytes": 1210,
+      "sha256": "bc890ec8ffb90e5ffccef4baae983db79166835fd567c9a904d662537fd9f40f"
+    },
+    {
+      "name": "grouped_moe.o",
+      "bytes": 196752,
+      "sha256": "19722a91be8ae3bca6ccdd156415d35d16f1be7b363d6babbb8477f5a1435f5d"
+    },
+    {
+      "name": "int8_vnni.o",
+      "bytes": 185880,
+      "sha256": "6392330c7c7a36d9ffccd8f60891b8d9e953882a81cfc714b63e11ebb445871a"
+    },
+    {
+      "name": "moe_dispatch.o",
+      "bytes": 203816,
+      "sha256": "1f3df581ccedfbc97d0f94d825d38f4db3ca2ba41a31f01cfc78dda07592eeb7"
+    },
+    {
+      "name": "sparseflow_int8_vnni.so",
+      "bytes": 236560,
+      "sha256": "2b68ed2ad846192e46c1fcb46c533a01b79bd145551b1c4c336b78fa3703161d"
+    }
+  ]
+}

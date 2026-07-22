@@ -1,0 +1,1272 @@
+{
+  "release_code_commit": "ea5033d4031c23e2b633fa593730a644ec0037df",
+  "branch": "main",
+  "agent": "Main Dev",
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "metadata_sha256": "75c3ff47bb3f96eee08facdf700ccec7da9a0b37e8c1d4003e251eb05542d735",
+    "config_sha256": null,
+    "index_sha256": null,
+    "payload_size_sha256": "b7bd42af587e204ba1b14084f5a35a7fe10fd1e20f4ae1b0cf452f4362f415c8"
+  },
+  "container": {
+    "path": "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+    "metadata_sha256": "ed1968b1157a57f86982b34c71db206a4edb7fc911289dbc89641ccbe1b9f898",
+    "weight_bytes": 32296304640,
+    "execution_bytes": 125992960,
+    "format_id": "canonical-int8-v1"
+  },
+  "host": {
+    "platform": "Linux-5.15.0-113-generic-x86_64-with-glibc2.35",
+    "kernel": "5.15.0-113-generic",
+    "python": "3.12.11",
+    "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
+    "logical_cpus": 20,
+    "memory_total_bytes": 135066402816,
+    "threads": 10,
+    "omp_num_threads": "10",
+    "mkl_num_threads": "10",
+    "filesystem": "/"
+  },
+  "provenance": {
+    "source_tree_clean_at_experiment_start": true,
+    "result_directory_writes_expected": true,
+    "raw_results_directory": "/root/workspace/cache/final_release_raw",
+    "physical_read_bytes_policy": "not independently sampled by the public-alpha run command"
+  },
+  "kind": "sparseflow_stage7_9_quality_final",
+  "manifest": "2beca7b55cf24d801ee39e652855b51320c16d4153f62d76bba7f747d5aab400",
+  "cells": {
+    "bf16_reference_inherited": {
+      "backend": "bf16-reference_cpu_choice_score",
+      "raw_file": "/root/workspace/cache/final_release_raw/formal-bf16-reference.json",
+      "n": 60,
+      "summary": {
+        "n": 60,
+        "accuracy": 0.5333333333333333,
+        "acc_norm_char": 0.6666666666666666,
+        "acc_norm_token": 0.6333333333333333,
+        "forward_seconds": 722.2477428759994
+      },
+      "model_config_sha256": "93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99",
+      "manifest_sha256": "2beca7b55cf24d801ee39e652855b51320c16d4153f62d76bba7f747d5aab400",
+      "runtime": {
+        "torch": "2.9.1+cu128",
+        "transformers": "5.14.0.dev0",
+        "dtype": "bf16",
+        "threads": 10,
+        "expert_storage": "bf16"
+      },
+      "git": {
+        "commit": "1ef6df6a8b712fb9a02d3d61e03929ed5c06ea00",
+        "branch": "main",
+        "dirty": false
+      },
+      "prediction": {
+        "raw_correct": 32,
+        "norm_char_correct": 40,
+        "norm_token_correct": 38,
+        "sequence": [
+          {
+            "id": "hellaswag:6857",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:12205",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:18357",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:14447",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:10691",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:19411",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:12365",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:13088",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:13428",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:7891",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:49250",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:35602",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:43317",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:29410",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:6926",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:48370",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:13561",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:4250",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:31373",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:5002",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7215180",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_7097318",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:LEAP_2004_8_10397",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7234483",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_400905",
+            "prediction": 1,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_180058",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400339",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_184258",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_176015",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_402101",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_7124338",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400655",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7074865",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7120890",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400047",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7141698",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7115063",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400050",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_409529",
+            "prediction": 1,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_412683",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:philosophy:9946",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:machine_learning:6893",
+            "prediction": 2,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:global_facts:2641",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_psychology:5162",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:conceptual_physics:1662",
+            "prediction": 3,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:professional_law:11468",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:high_school_psychology:5367",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_biology:2713",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_macroeconomics:3996",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:abstract_algebra:47",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "mmlu:high_school_statistics:5586",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:philosophy:9791",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:professional_law:10663",
+            "prediction": 2,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:miscellaneous:8139",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:college_chemistry:915",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_european_history:3309",
+            "prediction": 2,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:philosophy:9799",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:logical_fallacies:6778",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:elementary_mathematics:2141",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:moral_scenarios:8675",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          }
+        ]
+      },
+      "choice_log_likelihood_recorded": true,
+      "choice_log_likelihood": {
+        "sha256": "f138001df0819e3073af3d3b5e73944da4bf23f0282337d340238f8a539a6b6f",
+        "question_count": 60,
+        "mean_gold": -33.72522422973628,
+        "mean_predicted": -28.767027346281974
+      },
+      "source": "benchmarks/results/2026-07-16/stage7_5/formal/quality/formal-bf16-reference.json"
+    },
+    "int8_native_resident": {
+      "backend": "int8-native_cpu_choice_score",
+      "raw_file": "/root/workspace/cache/final_release_raw/quality_cells/formal-int8-native.json",
+      "n": 60,
+      "summary": {
+        "n": 60,
+        "accuracy": 0.55,
+        "acc_norm_char": 0.6666666666666666,
+        "acc_norm_token": 0.65,
+        "forward_seconds": 1788.2842395939897
+      },
+      "model_config_sha256": "93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99",
+      "manifest_sha256": "2beca7b55cf24d801ee39e652855b51320c16d4153f62d76bba7f747d5aab400",
+      "runtime": {
+        "torch": "2.13.0+cu130",
+        "transformers": "5.14.1",
+        "dtype": "bf16",
+        "threads": 10,
+        "expert_storage": "int8-native",
+        "native_dispatch": "legacy"
+      },
+      "git": {
+        "commit": "ea5033d4031c23e2b633fa593730a644ec0037df",
+        "branch": "main",
+        "dirty": true
+      },
+      "prediction": {
+        "raw_correct": 33,
+        "norm_char_correct": 40,
+        "norm_token_correct": 39,
+        "sequence": [
+          {
+            "id": "hellaswag:6857",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:12205",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:18357",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:14447",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:10691",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:19411",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:12365",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:13088",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:13428",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:7891",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:49250",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:35602",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:43317",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:29410",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:6926",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:48370",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:13561",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:4250",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:31373",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:5002",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7215180",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_7097318",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:LEAP_2004_8_10397",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7234483",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_400905",
+            "prediction": 1,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_180058",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400339",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_184258",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_176015",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_402101",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_7124338",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400655",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7074865",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7120890",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400047",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7141698",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7115063",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400050",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_409529",
+            "prediction": 1,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_412683",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:philosophy:9946",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:machine_learning:6893",
+            "prediction": 2,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:global_facts:2641",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_psychology:5162",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:conceptual_physics:1662",
+            "prediction": 3,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:professional_law:11468",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:high_school_psychology:5367",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_biology:2713",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_macroeconomics:3996",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:abstract_algebra:47",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "mmlu:high_school_statistics:5586",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:philosophy:9791",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:professional_law:10663",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:miscellaneous:8139",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:college_chemistry:915",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_european_history:3309",
+            "prediction": 2,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:philosophy:9799",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:logical_fallacies:6778",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:elementary_mathematics:2141",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:moral_scenarios:8675",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          }
+        ]
+      },
+      "choice_log_likelihood_recorded": true,
+      "choice_log_likelihood": {
+        "sha256": "e901b7dcdb3e19c260134afe1670aa3bba5d52e0d556b19ca0f15542ccc7477c",
+        "question_count": 60,
+        "mean_gold": -33.724184839498804,
+        "mean_predicted": -28.7734737918865
+      }
+    },
+    "int8_native_streaming": {
+      "backend": "int8-native-streaming_cpu_choice_score",
+      "raw_file": "/root/workspace/cache/final_release_raw/quality_cells/formal-int8-native-streaming.json",
+      "n": 60,
+      "summary": {
+        "n": 60,
+        "accuracy": 0.55,
+        "acc_norm_char": 0.6666666666666666,
+        "acc_norm_token": 0.65,
+        "forward_seconds": 2623.971582382008
+      },
+      "model_config_sha256": "93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99",
+      "manifest_sha256": "2beca7b55cf24d801ee39e652855b51320c16d4153f62d76bba7f747d5aab400",
+      "runtime": {
+        "torch": "2.13.0+cu130",
+        "transformers": "5.14.1",
+        "dtype": "bf16",
+        "threads": 10,
+        "expert_storage": "int8-native",
+        "native_dispatch": "legacy"
+      },
+      "git": {
+        "commit": "ea5033d4031c23e2b633fa593730a644ec0037df",
+        "branch": "main",
+        "dirty": true
+      },
+      "prediction": {
+        "raw_correct": 33,
+        "norm_char_correct": 40,
+        "norm_token_correct": 39,
+        "sequence": [
+          {
+            "id": "hellaswag:6857",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:12205",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:18357",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:14447",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:10691",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:19411",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:12365",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:13088",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:13428",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "hellaswag:7891",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:49250",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:35602",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:43317",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:29410",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:6926",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:48370",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:13561",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "hellaswag:4250",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "hellaswag:31373",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "hellaswag:5002",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7215180",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_7097318",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:LEAP_2004_8_10397",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7234483",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_400905",
+            "prediction": 1,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_180058",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400339",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_184258",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_176015",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_402101",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "arc_challenge:Mercury_7124338",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400655",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_7074865",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7120890",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400047",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7141698",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_7115063",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "arc_challenge:Mercury_SC_400050",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "arc_challenge:Mercury_409529",
+            "prediction": 1,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "arc_challenge:Mercury_412683",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:philosophy:9946",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:machine_learning:6893",
+            "prediction": 2,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:global_facts:2641",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_psychology:5162",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:conceptual_physics:1662",
+            "prediction": 3,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:professional_law:11468",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:high_school_psychology:5367",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_biology:2713",
+            "prediction": 0,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_macroeconomics:3996",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:abstract_algebra:47",
+            "prediction": 2,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 2
+          },
+          {
+            "id": "mmlu:high_school_statistics:5586",
+            "prediction": 3,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:philosophy:9791",
+            "prediction": 3,
+            "prediction_norm_char": 2,
+            "prediction_norm_token": 3
+          },
+          {
+            "id": "mmlu:professional_law:10663",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:miscellaneous:8139",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:college_chemistry:915",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:high_school_european_history:3309",
+            "prediction": 2,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:philosophy:9799",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:logical_fallacies:6778",
+            "prediction": 1,
+            "prediction_norm_char": 1,
+            "prediction_norm_token": 1
+          },
+          {
+            "id": "mmlu:elementary_mathematics:2141",
+            "prediction": 0,
+            "prediction_norm_char": 0,
+            "prediction_norm_token": 0
+          },
+          {
+            "id": "mmlu:moral_scenarios:8675",
+            "prediction": 0,
+            "prediction_norm_char": 3,
+            "prediction_norm_token": 3
+          }
+        ]
+      },
+      "choice_log_likelihood_recorded": true,
+      "choice_log_likelihood": {
+        "sha256": "e901b7dcdb3e19c260134afe1670aa3bba5d52e0d556b19ca0f15542ccc7477c",
+        "question_count": 60,
+        "mean_gold": -33.724184839498804,
+        "mean_predicted": -28.7734737918865
+      }
+    }
+  },
+  "resident_streaming_prediction_equality": {
+    "raw": true,
+    "norm_char": true,
+    "norm_token": true
+  },
+  "choice_log_likelihood": {
+    "resident_streaming_exact": true,
+    "resident": {
+      "sha256": "e901b7dcdb3e19c260134afe1670aa3bba5d52e0d556b19ca0f15542ccc7477c",
+      "question_count": 60,
+      "mean_gold": -33.724184839498804,
+      "mean_predicted": -28.7734737918865
+    },
+    "streaming": {
+      "sha256": "e901b7dcdb3e19c260134afe1670aa3bba5d52e0d556b19ca0f15542ccc7477c",
+      "question_count": 60,
+      "mean_gold": -33.724184839498804,
+      "mean_predicted": -28.7734737918865
+    },
+    "bf16_reference": {
+      "sha256": "f138001df0819e3073af3d3b5e73944da4bf23f0282337d340238f8a539a6b6f",
+      "question_count": 60,
+      "mean_gold": -33.72522422973628,
+      "mean_predicted": -28.767027346281974
+    }
+  },
+  "kl": "not measured by choice scorer; no full-vocabulary logits were serialized",
+  "top_k_overlap": "not measured by choice scorer; no full-vocabulary logits were serialized"
+}

@@ -1,0 +1,59 @@
+{
+  "release_code_commit": "ea5033d4031c23e2b633fa593730a644ec0037df",
+  "branch": "main",
+  "agent": "Main Dev",
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "metadata_sha256": "75c3ff47bb3f96eee08facdf700ccec7da9a0b37e8c1d4003e251eb05542d735",
+    "config_sha256": null,
+    "index_sha256": null,
+    "payload_size_sha256": "b7bd42af587e204ba1b14084f5a35a7fe10fd1e20f4ae1b0cf452f4362f415c8"
+  },
+  "container": {
+    "path": "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+    "metadata_sha256": "ed1968b1157a57f86982b34c71db206a4edb7fc911289dbc89641ccbe1b9f898",
+    "weight_bytes": 32296304640,
+    "execution_bytes": 125992960,
+    "format_id": "canonical-int8-v1"
+  },
+  "host": {
+    "platform": "Linux-5.15.0-113-generic-x86_64-with-glibc2.35",
+    "kernel": "5.15.0-113-generic",
+    "python": "3.12.11",
+    "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
+    "logical_cpus": 20,
+    "memory_total_bytes": 135066402816,
+    "threads": 10,
+    "omp_num_threads": "10",
+    "mkl_num_threads": "10",
+    "filesystem": "/"
+  },
+  "provenance": {
+    "source_tree_clean_at_experiment_start": true,
+    "result_directory_writes_expected": true,
+    "raw_results_directory": "/root/workspace/cache/final_release_raw",
+    "physical_read_bytes_policy": "not independently sampled by the public-alpha run command"
+  },
+  "kind": "sparseflow_stage7_9_prepare_resume_audit",
+  "first": {
+    "converted_layers": 1,
+    "resumed_layers": 0,
+    "manifest_index_sha256": "028b61b4ac9df0b50311e4961e70547e34c598456db77c0ded0015b1579d0acd"
+  },
+  "resume": {
+    "converted_layers": 0,
+    "resumed_layers": 1,
+    "manifest_index_sha256": "028b61b4ac9df0b50311e4961e70547e34c598456db77c0ded0015b1579d0acd"
+  },
+  "gates": {
+    "first_conversion_pass": true,
+    "resume_skipped_completed_layer": true,
+    "weight_manifest_unchanged": true,
+    "execution_manifest_unchanged": true,
+    "layer_hash_and_mtime_unchanged": true,
+    "no_temp_files_left": true,
+    "disk_preflight_pass": true
+  },
+  "source_first": "/root/workspace/cache/final_release_raw/prepare_first.json",
+  "source_resume": "/root/workspace/cache/final_release_raw/prepare_resume.json"
+}

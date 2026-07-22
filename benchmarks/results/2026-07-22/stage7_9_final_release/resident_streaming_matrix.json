@@ -1,0 +1,444 @@
+{
+  "release_code_commit": "ea5033d4031c23e2b633fa593730a644ec0037df",
+  "branch": "main",
+  "agent": "Main Dev",
+  "model": {
+    "path": "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "metadata_sha256": "75c3ff47bb3f96eee08facdf700ccec7da9a0b37e8c1d4003e251eb05542d735",
+    "config_sha256": null,
+    "index_sha256": null,
+    "payload_size_sha256": "b7bd42af587e204ba1b14084f5a35a7fe10fd1e20f4ae1b0cf452f4362f415c8"
+  },
+  "container": {
+    "path": "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+    "metadata_sha256": "ed1968b1157a57f86982b34c71db206a4edb7fc911289dbc89641ccbe1b9f898",
+    "weight_bytes": 32296304640,
+    "execution_bytes": 125992960,
+    "format_id": "canonical-int8-v1"
+  },
+  "host": {
+    "platform": "Linux-5.15.0-113-generic-x86_64-with-glibc2.35",
+    "kernel": "5.15.0-113-generic",
+    "python": "3.12.11",
+    "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
+    "logical_cpus": 20,
+    "memory_total_bytes": 135066402816,
+    "threads": 10,
+    "omp_num_threads": "10",
+    "mkl_num_threads": "10",
+    "filesystem": "/"
+  },
+  "provenance": {
+    "source_tree_clean_at_experiment_start": true,
+    "result_directory_writes_expected": true,
+    "raw_results_directory": "/root/workspace/cache/final_release_raw",
+    "physical_read_bytes_policy": "not independently sampled by the public-alpha run command"
+  },
+  "kind": "sparseflow_stage7_9_resident_streaming_matrix",
+  "cells": [
+    {
+      "name": "resident-hybrid-warm",
+      "state": "warm",
+      "cache_budget_bytes": null,
+      "raw_files": [
+        "/root/workspace/cache/final_release_raw/run_stable.json"
+      ],
+      "sample_count": 1,
+      "samples": [
+        {
+          "prompt": "Explain how sparse expert routing trades RAM capacity for SSD reads.",
+          "generated_tokens": 32,
+          "prefill_seconds": 5.372928918999605,
+          "decode_seconds": 16.48629918200004,
+          "decode_tokens_per_second": 1.9410056585008495,
+          "token_latency_p50_seconds": 0.5327957110002899,
+          "token_latency_p95_seconds": 0.5800942770001711,
+          "current_rss_bytes": 38475321344,
+          "peak_rss_bytes": 39371587584,
+          "provider_logical_read_bytes": 0,
+          "provider_loaded_bytes": 0,
+          "process_physical_read_bytes": null,
+          "process_physical_read_bytes_status": "not-sampled",
+          "cache": {
+            "budget_bytes": 0,
+            "hits": 0,
+            "misses": 0,
+            "evictions": 0,
+            "cached_bytes": 0,
+            "pinned_entries": 0,
+            "pinned_bytes": 0
+          },
+          "leases_zero": true,
+          "runtime_identity": {
+            "runtime_id": "qwen36-text-memory-native-v1",
+            "expert_module_id": "SparseFlowQwenExperts-v1",
+            "dispatch_id": "qwen36-native-grouped-prefill-canonical-decode-v1",
+            "kernel_id": "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
+          }
+        }
+      ],
+      "summary": {
+        "ttft_p50_seconds": 5.372928918999605,
+        "decode_tok_per_second_p50": 1.9410056585008495,
+        "token_latency_p50_seconds": 0.5327957110002899,
+        "token_latency_p95_seconds": 0.5800942770001711,
+        "current_rss_bytes_p50": 38475321344.0,
+        "peak_rss_bytes_max": 39371587584.0,
+        "provider_logical_read_bytes_p50": 0.0,
+        "process_physical_read_bytes": null
+      },
+      "all_success": true
+    },
+    {
+      "name": "streaming-s1-4g-warm",
+      "state": "warm",
+      "cache_budget_bytes": 4294967296,
+      "raw_files": [
+        "/root/workspace/cache/final_release_raw/run_low_memory.json"
+      ],
+      "sample_count": 1,
+      "samples": [
+        {
+          "prompt": "Explain how sparse expert routing trades RAM capacity for SSD reads.",
+          "generated_tokens": 32,
+          "prefill_seconds": 12.749926278000203,
+          "decode_seconds": 24.439498882002226,
+          "decode_tokens_per_second": 1.3093558159478258,
+          "token_latency_p50_seconds": 0.7835668210000222,
+          "token_latency_p95_seconds": 0.951624253000773,
+          "current_rss_bytes": 10494640128,
+          "peak_rss_bytes": 10494640128,
+          "provider_logical_read_bytes": 21659664384,
+          "provider_loaded_bytes": 21659664384,
+          "process_physical_read_bytes": null,
+          "process_physical_read_bytes_status": "not-sampled",
+          "cache": {
+            "budget_bytes": 4292849664,
+            "hits": 5972,
+            "misses": 6872,
+            "evictions": 5510,
+            "cached_bytes": 4292849664,
+            "pinned_entries": 0,
+            "pinned_bytes": 0
+          },
+          "leases_zero": true,
+          "runtime_identity": {
+            "runtime_id": "qwen36-text-memory-native-v1",
+            "expert_module_id": "SparseFlowQwenExperts-v1",
+            "dispatch_id": "qwen36-native-grouped-prefill-canonical-decode-v1",
+            "kernel_id": "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
+          }
+        }
+      ],
+      "summary": {
+        "ttft_p50_seconds": 12.749926278000203,
+        "decode_tok_per_second_p50": 1.3093558159478258,
+        "token_latency_p50_seconds": 0.7835668210000222,
+        "token_latency_p95_seconds": 0.951624253000773,
+        "current_rss_bytes_p50": 10494640128.0,
+        "peak_rss_bytes_max": 10494640128.0,
+        "provider_logical_read_bytes_p50": 21659664384.0,
+        "process_physical_read_bytes": null
+      },
+      "all_success": true
+    },
+    {
+      "name": "streaming-s1-8g-warm",
+      "state": "warm",
+      "cache_budget_bytes": 8589934592,
+      "raw_files": [
+        "/root/workspace/cache/final_release_raw/run_streaming_8g_warm.json"
+      ],
+      "sample_count": 1,
+      "samples": [
+        {
+          "prompt": "Explain how sparse expert routing trades RAM capacity for SSD reads.",
+          "generated_tokens": 32,
+          "prefill_seconds": 13.190836644998853,
+          "decode_seconds": 22.680830752995462,
+          "decode_tokens_per_second": 1.4108830645797115,
+          "token_latency_p50_seconds": 0.7262983889995667,
+          "token_latency_p95_seconds": 0.8452348350001557,
+          "current_rss_bytes": 14878130176,
+          "peak_rss_bytes": 14878130176,
+          "provider_logical_read_bytes": 15809789952,
+          "provider_loaded_bytes": 15809789952,
+          "process_physical_read_bytes": null,
+          "process_physical_read_bytes_status": "not-sampled",
+          "cache": {
+            "budget_bytes": 8588851200,
+            "hits": 7828,
+            "misses": 5016,
+            "evictions": 2291,
+            "cached_bytes": 8588851200,
+            "pinned_entries": 0,
+            "pinned_bytes": 0
+          },
+          "leases_zero": true,
+          "runtime_identity": {
+            "runtime_id": "qwen36-text-memory-native-v1",
+            "expert_module_id": "SparseFlowQwenExperts-v1",
+            "dispatch_id": "qwen36-native-grouped-prefill-canonical-decode-v1",
+            "kernel_id": "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
+          }
+        }
+      ],
+      "summary": {
+        "ttft_p50_seconds": 13.190836644998853,
+        "decode_tok_per_second_p50": 1.4108830645797115,
+        "token_latency_p50_seconds": 0.7262983889995667,
+        "token_latency_p95_seconds": 0.8452348350001557,
+        "current_rss_bytes_p50": 14878130176.0,
+        "peak_rss_bytes_max": 14878130176.0,
+        "provider_logical_read_bytes_p50": 15809789952.0,
+        "process_physical_read_bytes": null
+      },
+      "all_success": true
+    },
+    {
+      "name": "streaming-s1-4g-model-cold",
+      "state": "model-cold",
+      "cache_budget_bytes": 4294967296,
+      "raw_files": [
+        "/root/workspace/cache/final_release_raw/run_streaming_4g_cold_1.json",
+        "/root/workspace/cache/final_release_raw/run_streaming_4g_cold_2.json",
+        "/root/workspace/cache/final_release_raw/run_streaming_4g_cold_3.json"
+      ],
+      "sample_count": 3,
+      "samples": [
+        {
+          "prompt": "Explain how sparse expert routing trades RAM capacity for SSD reads.",
+          "generated_tokens": 32,
+          "prefill_seconds": 11.883486406000884,
+          "decode_seconds": 24.33565940999324,
+          "decode_tokens_per_second": 1.3149427948872205,
+          "token_latency_p50_seconds": 0.7599101619998692,
+          "token_latency_p95_seconds": 0.9942639009987033,
+          "current_rss_bytes": 10478452736,
+          "peak_rss_bytes": 10478452736,
+          "provider_logical_read_bytes": 21659664384,
+          "provider_loaded_bytes": 21659664384,
+          "process_physical_read_bytes": null,
+          "process_physical_read_bytes_status": "not-sampled",
+          "cache": {
+            "budget_bytes": 4292849664,
+            "hits": 5972,
+            "misses": 6872,
+            "evictions": 5510,
+            "cached_bytes": 4292849664,
+            "pinned_entries": 0,
+            "pinned_bytes": 0
+          },
+          "leases_zero": true,
+          "runtime_identity": {
+            "runtime_id": "qwen36-text-memory-native-v1",
+            "expert_module_id": "SparseFlowQwenExperts-v1",
+            "dispatch_id": "qwen36-native-grouped-prefill-canonical-decode-v1",
+            "kernel_id": "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
+          }
+        },
+        {
+          "prompt": "Explain how sparse expert routing trades RAM capacity for SSD reads.",
+          "generated_tokens": 32,
+          "prefill_seconds": 12.70098861400038,
+          "decode_seconds": 25.190098508002848,
+          "decode_tokens_per_second": 1.270340407356234,
+          "token_latency_p50_seconds": 0.8016865059998963,
+          "token_latency_p95_seconds": 1.0303470269991521,
+          "current_rss_bytes": 10507481088,
+          "peak_rss_bytes": 10507481088,
+          "provider_logical_read_bytes": 21659664384,
+          "provider_loaded_bytes": 21659664384,
+          "process_physical_read_bytes": null,
+          "process_physical_read_bytes_status": "not-sampled",
+          "cache": {
+            "budget_bytes": 4292849664,
+            "hits": 5972,
+            "misses": 6872,
+            "evictions": 5510,
+            "cached_bytes": 4292849664,
+            "pinned_entries": 0,
+            "pinned_bytes": 0
+          },
+          "leases_zero": true,
+          "runtime_identity": {
+            "runtime_id": "qwen36-text-memory-native-v1",
+            "expert_module_id": "SparseFlowQwenExperts-v1",
+            "dispatch_id": "qwen36-native-grouped-prefill-canonical-decode-v1",
+            "kernel_id": "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
+          }
+        },
+        {
+          "prompt": "Explain how sparse expert routing trades RAM capacity for SSD reads.",
+          "generated_tokens": 32,
+          "prefill_seconds": 12.889811645998634,
+          "decode_seconds": 25.514850476998618,
+          "decode_tokens_per_second": 1.2541715668233164,
+          "token_latency_p50_seconds": 0.8181257109990838,
+          "token_latency_p95_seconds": 0.9698955769999884,
+          "current_rss_bytes": 10477649920,
+          "peak_rss_bytes": 10477649920,
+          "provider_logical_read_bytes": 21659664384,
+          "provider_loaded_bytes": 21659664384,
+          "process_physical_read_bytes": null,
+          "process_physical_read_bytes_status": "not-sampled",
+          "cache": {
+            "budget_bytes": 4292849664,
+            "hits": 5972,
+            "misses": 6872,
+            "evictions": 5510,
+            "cached_bytes": 4292849664,
+            "pinned_entries": 0,
+            "pinned_bytes": 0
+          },
+          "leases_zero": true,
+          "runtime_identity": {
+            "runtime_id": "qwen36-text-memory-native-v1",
+            "expert_module_id": "SparseFlowQwenExperts-v1",
+            "dispatch_id": "qwen36-native-grouped-prefill-canonical-decode-v1",
+            "kernel_id": "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
+          }
+        }
+      ],
+      "summary": {
+        "ttft_p50_seconds": 12.70098861400038,
+        "decode_tok_per_second_p50": 1.270340407356234,
+        "token_latency_p50_seconds": 0.8016865059998963,
+        "token_latency_p95_seconds": 0.9942639009987033,
+        "current_rss_bytes_p50": 10478452736.0,
+        "peak_rss_bytes_max": 10507481088.0,
+        "provider_logical_read_bytes_p50": 21659664384.0,
+        "process_physical_read_bytes": null
+      },
+      "all_success": true
+    }
+  ],
+  "grouped_abba": {
+    "raw_file": "/root/workspace/cache/final_release_raw/resident_grouped_abba.json",
+    "cells": [
+      {
+        "batch_size": 1,
+        "schedule": "ABBA",
+        "grouped": {
+          "samples": 6,
+          "median_decode_seconds": 15.4372079354971,
+          "median_aggregate_decode_tok_per_second": 2.0081424431356716,
+          "token_latency_p50_seconds": 0.4942145974991945,
+          "token_latency_p95_seconds": 0.5555374459995619,
+          "runtime_identity": {
+            "mode": "resident",
+            "load_mode": "memory-native",
+            "expert_storage": "int8-native",
+            "native_dispatch": "grouped",
+            "backend_id": "sparseflow-int8-native-resident",
+            "provider_native": true
+          }
+        },
+        "fused": {
+          "samples": 6,
+          "median_decode_seconds": 15.88923054299903,
+          "median_aggregate_decode_tok_per_second": 1.9511168014606346,
+          "token_latency_p50_seconds": 0.5090699535003296,
+          "token_latency_p95_seconds": 0.5707864832511405,
+          "runtime_identity": {
+            "mode": "resident",
+            "load_mode": "memory-native",
+            "expert_storage": "int8-native",
+            "native_dispatch": "hybrid",
+            "backend_id": "sparseflow-int8-native-resident",
+            "provider_native": true
+          }
+        },
+        "paired_all_exact": true,
+        "paired_behavior_exact": true,
+        "max_abs_logit_error": 0.0,
+        "mean_abs_logit_error": 0.0
+      },
+      {
+        "batch_size": 4,
+        "schedule": "ABBA",
+        "grouped": {
+          "samples": 6,
+          "median_decode_seconds": 28.65954694100401,
+          "median_aggregate_decode_tok_per_second": 4.326655975385099,
+          "token_latency_p50_seconds": 0.898132419999456,
+          "token_latency_p95_seconds": 1.150247638250221,
+          "runtime_identity": {
+            "mode": "resident",
+            "load_mode": "memory-native",
+            "expert_storage": "int8-native",
+            "native_dispatch": "grouped",
+            "backend_id": "sparseflow-int8-native-resident",
+            "provider_native": true
+          }
+        },
+        "fused": {
+          "samples": 6,
+          "median_decode_seconds": 32.944367003497064,
+          "median_aggregate_decode_tok_per_second": 3.7640468079630627,
+          "token_latency_p50_seconds": 1.0392724474995703,
+          "token_latency_p95_seconds": 1.212098175000392,
+          "runtime_identity": {
+            "mode": "resident",
+            "load_mode": "memory-native",
+            "expert_storage": "int8-native",
+            "native_dispatch": "hybrid",
+            "backend_id": "sparseflow-int8-native-resident",
+            "provider_native": true
+          }
+        },
+        "paired_all_exact": true,
+        "paired_behavior_exact": true,
+        "max_abs_logit_error": 0.0,
+        "mean_abs_logit_error": 0.0
+      },
+      {
+        "batch_size": 8,
+        "schedule": "ABBA",
+        "grouped": {
+          "samples": 6,
+          "median_decode_seconds": 44.06817855150348,
+          "median_aggregate_decode_tok_per_second": 5.627681934386278,
+          "token_latency_p50_seconds": 1.3192030135005552,
+          "token_latency_p95_seconds": 1.7985048089994962,
+          "runtime_identity": {
+            "mode": "resident",
+            "load_mode": "memory-native",
+            "expert_storage": "int8-native",
+            "native_dispatch": "grouped",
+            "backend_id": "sparseflow-int8-native-resident",
+            "provider_native": true
+          }
+        },
+        "fused": {
+          "samples": 6,
+          "median_decode_seconds": 51.15293960700001,
+          "median_aggregate_decode_tok_per_second": 4.848408970232074,
+          "token_latency_p50_seconds": 1.5959819484996842,
+          "token_latency_p95_seconds": 1.9933273457500036,
+          "runtime_identity": {
+            "mode": "resident",
+            "load_mode": "memory-native",
+            "expert_storage": "int8-native",
+            "native_dispatch": "hybrid",
+            "backend_id": "sparseflow-int8-native-resident",
+            "provider_native": true
+          }
+        },
+        "paired_all_exact": true,
+        "paired_behavior_exact": true,
+        "max_abs_logit_error": 0.0,
+        "mean_abs_logit_error": 0.0
+      }
+    ],
+    "gates": {
+      "protocol_exact": true,
+      "all_runtime_identity_exact": true,
+      "all_paired_full_logits_exact": true,
+      "all_paired_behavior_exact": true,
+      "all_repeats_exact": true
+    },
+    "all_gates_pass": true
+  },
+  "physical_read_note": "provider logical reads are recorded; process physical reads were not independently sampled for these public-alpha runs"
+}
