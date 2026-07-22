@@ -3,7 +3,7 @@
   "kind": "sparseflow_stage7_8_verification",
   "agent": "Main Dev",
   "git": {
-    "commit": "7a93d94e85eab0b772fd97d4cd7bbc8ea99de5d3",
+    "commit": "449431ac0a449afb2732c13dac0f7f79abcfa9dc",
     "clean": true
   },
   "checks": {
@@ -74,7 +74,7 @@
     "streaming": "/root/workspace/SparceFlow/benchmarks/results/2026-07-22/stage7_8/streaming_subcohort_ratio025.json",
     "formal": "/root/workspace/SparceFlow/benchmarks/results/2026-07-22/stage7_8/formal_resident_abba.json",
     "formal_sha256": "a0fc8dd64ad785a45b9c0763723a3c3dde2e3ceb68d97e5008a352af3deb809e",
-    "expected_commit": "7a93d94e85eab0b772fd97d4cd7bbc8ea99de5d3",
+    "expected_commit": "449431ac0a449afb2732c13dac0f7f79abcfa9dc",
     "formal_commit": "3f935f24025e2b17af61ab6e92a099947ceb188f",
     "streaming_sha256": "f285498e77be181a7ae16600b347d4b5ba17feab63a32c6a6bc68c676de88c2c"
   }
