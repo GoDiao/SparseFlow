@@ -2,7 +2,7 @@
 
 **Owner:** Main Dev  
 **Benchmark owner:** Benchmark  
-**Status:** implementation in progress
+**Status:** complete
 
 ## Goal
 
@@ -64,5 +64,12 @@ comparisons report reduction-order error separately.
 The Public Alpha does not claim a shared streaming batching policy. A future
 policy can return only after offline replay passes every 4/8 GiB read-amplification
 gate and then a new runtime correctness gate.
+
+## Final Audit
+
+The Smoke, Standard, and Endurance validation artifacts were generated from
+clean code commit `d3213742c098e4376a2b6123a7e40d770917f04d`. The subsequent
+commit only archives the already-verified result metadata and marks this plan
+complete; it does not change the runtime used by those validations.
 
 <!-- [Main Dev] -->

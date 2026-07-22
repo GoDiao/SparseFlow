@@ -2,7 +2,7 @@
 
 **Executor:** `[Main Dev]`
 **Benchmark executor:** `[Benchmark]`
-**Code baseline:** `04babf8e395f6bc7f1e954cfd1e71a7ebcbb6ffd`
+**Code baseline:** `d3213742c098e4376a2b6123a7e40d770917f04d`
 **Model:** `Qwen/Qwen3.6-35B-A3B`
 
 ## Decision

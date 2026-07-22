@@ -4,7 +4,7 @@
   "stage": "7.9",
   "agent": "Main Dev",
   "attribution": "[Main Dev]",
-  "code_commit": "04babf8e395f6bc7f1e954cfd1e71a7ebcbb6ffd",
+  "code_commit": "d3213742c098e4376a2b6123a7e40d770917f04d",
   "model": "model/Qwen3.6-35B-A3B",
   "container": ".cache/stage7_5/qwen36-int8",
   "presets": {
