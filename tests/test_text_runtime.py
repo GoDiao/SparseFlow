@@ -184,6 +184,35 @@ class TextRuntimeTest(unittest.TestCase):
         )
         self.assertEqual(tuple(output.shape), (1, 2))
 
+    def test_grouped_dispatch_uses_native_grouped_operator_for_multiple_rows(self):
+        class Provider:
+            backend_id = "test"
+            native = True
+
+            def observe_routes(self, _layer, _selected):
+                pass
+
+            def prepare(self, _layer, _expert_ids):
+                pass
+
+        class Workspace:
+            pass
+
+        module = SparseFlowQwenExperts(
+            0, Provider(), RouteAudit(), native_dispatch="grouped"
+        )
+        hidden = torch.ones((2, 2), dtype=torch.bfloat16)
+        selected = torch.tensor([[0], [1]], dtype=torch.long)
+        routing = torch.ones((2, 1), dtype=torch.bfloat16)
+        expected = torch.full_like(hidden, 3)
+        with patch(
+            "sparseflow.native_moe.run_grouped_native_moe",
+            return_value=(expected, Workspace()),
+        ) as grouped:
+            output = module(hidden, selected, routing)
+        self.assertTrue(torch.equal(output, expected))
+        grouped.assert_called_once()
+
     def test_prefill_decode_and_greedy_generation(self):
         model = FakeModel()
         runtime = Qwen36TextRuntime(

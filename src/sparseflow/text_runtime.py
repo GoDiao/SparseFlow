@@ -34,6 +34,7 @@ EXPERT_MODULE_ID = "SparseFlowQwenExperts-v1"
 DISPATCH_ID = "qwen36-topk-canonical-v2"
 FUSED_DISPATCH_ID = "qwen36-native-fused-moe-v1"
 HYBRID_DISPATCH_ID = "qwen36-native-grouped-prefill-canonical-decode-v1"
+GROUPED_DISPATCH_ID = "qwen36-native-grouped-expert-decode-v1"
 KERNEL_ID = "bf16-linear-silu-linear-eager-v1"
 INT8_REFERENCE_KERNEL_ID = "int8-per-channel-dequant-bf16-linear-silu-linear-v1"
 INT8_NATIVE_KERNEL_ID = "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
@@ -101,8 +102,22 @@ class SparseFlowQwenExperts(_Module):
         self.route_audit = route_audit
         self.telemetry = telemetry or RuntimeTelemetry("none")
         self.native_dispatch = native_dispatch
+        self._grouped_workspace = None
 
     def _run(self, hidden_states, top_k_index, top_k_weights, timing_callback=None):
+        if self.native_dispatch == "grouped" and hidden_states.shape[0] > 1:
+            from .native_moe import run_grouped_native_moe
+
+            result, self._grouped_workspace = run_grouped_native_moe(
+                hidden_states,
+                top_k_index,
+                top_k_weights,
+                self.provider,
+                self.layer,
+                workspace=self._grouped_workspace,
+                timing_callback=timing_callback,
+            )
+            return result
         if self.native_dispatch == "fused" or (
             self.native_dispatch == "hybrid" and hidden_states.shape[0] > 1
         ):
@@ -354,10 +369,10 @@ class Qwen36TextRuntime:
             raise ValueError("resident expert backend does not support prefetch workers")
         if expert_storage not in {"bf16", "int8-reference", "int8-native"}:
             raise ValueError("expert_storage must be bf16, int8-reference, or int8-native")
-        if native_dispatch not in {"legacy", "fused", "hybrid"}:
-            raise ValueError("native_dispatch must be legacy, fused, or hybrid")
-        if native_dispatch in {"fused", "hybrid"} and expert_storage != "int8-native":
-            raise ValueError("fused/hybrid native dispatch requires int8-native expert storage")
+        if native_dispatch not in {"legacy", "fused", "hybrid", "grouped"}:
+            raise ValueError("native_dispatch must be legacy, fused, hybrid, or grouped")
+        if native_dispatch in {"fused", "hybrid", "grouped"} and expert_storage != "int8-native":
+            raise ValueError("fused/hybrid/grouped dispatch requires int8-native expert storage")
         if deterministic_io_pipeline and (
             mode != "streaming"
             or native_dispatch != "fused"
@@ -905,6 +920,8 @@ class Qwen36TextRuntime:
                 "dispatch_id": (
                     FUSED_DISPATCH_ID
                     if self.provider is not None and self.native_dispatch == "fused"
+                    else GROUPED_DISPATCH_ID
+                    if self.provider is not None and self.native_dispatch == "grouped"
                     else HYBRID_DISPATCH_ID
                     if self.provider is not None and self.native_dispatch == "hybrid"
                     else DISPATCH_ID if self.provider is not None else "transformers-dispatch"

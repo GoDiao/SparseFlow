@@ -12,7 +12,7 @@ from sparseflow.native_int8 import (
     run_native_expert,
     set_native_profile,
 )
-from sparseflow.native_moe import run_fused_native_moe
+from sparseflow.native_moe import run_fused_native_moe, run_grouped_native_moe
 
 
 def has_native_requirements() -> bool:
@@ -108,6 +108,62 @@ class NativeInt8Test(unittest.TestCase):
         self.assertTrue(torch.equal(fused, repeated))
         difference = (fused.float() - legacy.float()).abs()
         self.assertLess(float(difference.max()), 0.02)
+
+    def test_grouped_moe_matches_fused_for_repeated_and_unique_routes(self):
+        generator = torch.Generator().manual_seed(4321)
+
+        def make_expert():
+            gate_weight = torch.randint(
+                -127, 128, (32, 64), generator=generator, dtype=torch.int8
+            )
+            down_weight = torch.randint(
+                -127, 128, (64, 16), generator=generator, dtype=torch.int8
+            )
+            return {
+                "native_int8": True,
+                "gate_up_proj": {
+                    "weight": gate_weight,
+                    "scales": torch.rand(32, generator=generator) * 0.01 + 0.001,
+                    "row_sums": torch.ops.sparseflow_native.row_sums(gate_weight),
+                },
+                "down_proj": {
+                    "weight": down_weight,
+                    "scales": torch.rand(64, generator=generator) * 0.01 + 0.001,
+                    "row_sums": torch.ops.sparseflow_native.row_sums(down_weight),
+                },
+            }
+
+        experts = {expert_id: make_expert() for expert_id in range(4)}
+
+        class Provider:
+            native = True
+
+            def prepare(self, _layer, _expert_ids):
+                pass
+
+            def get(self, _layer, expert_id):
+                return {"gate_up_proj": experts[expert_id], "down_proj": None}
+
+        hidden = torch.randn((4, 64), generator=generator, dtype=torch.bfloat16)
+        selected = torch.tensor(
+            [[3, 1], [3, 1], [0, 2], [2, 0]], dtype=torch.long
+        )
+        routing = torch.tensor(
+            [[0.4, 0.6], [0.7, 0.3], [0.2, 0.8], [0.9, 0.1]],
+            dtype=torch.bfloat16,
+        )
+        provider = Provider()
+        fused = run_fused_native_moe(hidden, selected, routing, provider, 0)
+        grouped, workspace = run_grouped_native_moe(
+            hidden, selected, routing, provider, 0
+        )
+        self.assertTrue(torch.equal(fused, grouped))
+        self.assertGreater(workspace.allocated_bytes(), 0)
+        grouped_again, same_workspace = run_grouped_native_moe(
+            hidden, selected, routing, provider, 0, workspace=workspace
+        )
+        self.assertIs(same_workspace, workspace)
+        self.assertTrue(torch.equal(grouped, grouped_again))
 
 
 if __name__ == "__main__":

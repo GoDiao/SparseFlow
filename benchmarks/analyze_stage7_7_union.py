@@ -36,10 +36,14 @@ def replay_schedule(
     int8_container: Path,
     budget: int,
     mode: str = "union",
+    working_set_ratio: float = 1.0,
 ) -> dict[str, Any]:
     from sparseflow.cache import ExpertCache
     from sparseflow.int8_container import Int8ExpertIndex
     from sparseflow.loader import ShardReader
+    from sparseflow.cohort_policy import SessionWorkingSet, partition_working_sets
+    if not 0.0 < working_set_ratio <= 1.0:
+        raise ValueError("working_set_ratio must be in (0, 1]")
 
     class RawInt8CacheReplay:
         """Replay storage/cache behavior without decoding or running kernels.
@@ -109,8 +113,12 @@ def replay_schedule(
     cache = ExpertCache(max_bytes=budget)
     reader = ShardReader()
     provider = RawInt8CacheReplay(int8_container, cache, reader)
+    expert_nbytes = provider.index.locate(provider.index.layers[0], 0).nbytes
     assignments = 0
     union_requests = 0
+    cohort_count = 0
+    cohort_overflow = 0
+    cohort_max_working_set = 0
     started = time.perf_counter()
     read_before = process_read_bytes()
     try:
@@ -141,6 +149,41 @@ def replay_schedule(
                             if current_layer == layer
                         )
                         layer_work.append((layer, selected, len(selected)))
+            elif mode == "cache-aware":
+                working_sets = []
+                for session_id, forward in step.sessions:
+                    group = sessions[session_id].group(forward)
+                    items = frozenset(
+                        (layer, expert)
+                        for layer, expert in group.requests
+                    )
+                    working_sets.append(SessionWorkingSet(session_id, items))
+                max_items = max(1, int(budget * working_set_ratio // expert_nbytes))
+                cohorts = partition_working_sets(working_sets, max_items)
+                cohort_count += len(cohorts)
+                cohort_overflow += sum(1 for cohort in cohorts if cohort.overflow)
+                cohort_max_working_set = max(
+                    cohort_max_working_set,
+                    max((len(cohort.working_set) for cohort in cohorts), default=0),
+                )
+                layer_work = []
+                for cohort in cohorts:
+                    active = set(cohort.session_ids)
+                    for layer in range(40):
+                        selected: list[int] = []
+                        assignments_for_layer = 0
+                        for session_id, forward in step.sessions:
+                            if session_id not in active:
+                                continue
+                            group = sessions[session_id].group(forward)
+                            current = [
+                                expert
+                                for current_layer, expert in group.requests
+                                if current_layer == layer
+                            ]
+                            selected.extend(current)
+                            assignments_for_layer += len(current)
+                        layer_work.append((layer, tuple(sorted(set(selected))), assignments_for_layer))
             else:
                 raise ValueError(f"unknown replay mode: {mode}")
             for layer, expert_ids, layer_assignments in layer_work:
@@ -169,6 +212,10 @@ def replay_schedule(
         "union_requests": union_requests,
         "union_reuse_assignments": assignments - union_requests,
         "union_compression": assignments / union_requests if union_requests else 0.0,
+        "cohort_count": cohort_count,
+        "cohort_overflow": cohort_overflow,
+        "cohort_max_working_set": cohort_max_working_set,
+        "working_set_ratio": working_set_ratio if mode == "cache-aware" else None,
         "cache": counters,
         "provider_read_bytes": int(counters.get("reader_bytes", 0)),
         "provider_read_calls": int(counters.get("reader_calls", 0)),

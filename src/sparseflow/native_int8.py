@@ -33,6 +33,7 @@ def load_native_int8() -> None:
 
         root = Path(__file__).resolve().parents[2]
         source = root / "native" / "int8_vnni.cpp"
+        grouped_source = root / "native" / "grouped_moe.cpp"
         build = Path(
             os.environ.get(
                 "SPARSEFLOW_NATIVE_CACHE",
@@ -42,7 +43,11 @@ def load_native_int8() -> None:
         build.mkdir(parents=True, exist_ok=True)
         load(
             name="sparseflow_int8_vnni",
-            sources=[str(source), str(root / "native" / "moe_dispatch.cpp")],
+            sources=[
+                str(source),
+                str(root / "native" / "moe_dispatch.cpp"),
+                str(grouped_source),
+            ],
             extra_cflags=[
                 "-O3",
                 "-std=c++17",
@@ -56,8 +61,9 @@ def load_native_int8() -> None:
             is_python_module=False,
             verbose=False,
         )
-        if not hasattr(torch.ops.sparseflow_native, "dynamic_linear") or not hasattr(
-            torch.ops.sparseflow_native, "fused_moe"
+        if not all(
+            hasattr(torch.ops.sparseflow_native, name)
+            for name in ("dynamic_linear", "fused_moe", "grouped_moe")
         ):
             raise RuntimeError("SparseFlow native INT8 operators failed to register")
         _LOADED = True

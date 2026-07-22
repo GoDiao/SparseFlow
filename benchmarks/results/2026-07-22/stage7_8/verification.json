@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_8_verification",
+  "agent": "Main Dev",
+  "git": {
+    "commit": "b2955039495908e7f0aa1e5de784bbfbf64588ea",
+    "clean": false
+  },
+  "checks": {
+    "summary_kind": true,
+    "summary_agent": true,
+    "grouped_kind": true,
+    "grouped_agent": true,
+    "streaming_kind": true,
+    "streaming_agent": true,
+    "summary_has_decision": true,
+    "summary_has_reason_or_pass": true,
+    "grouped_batches_present": true,
+    "grouped_repeat_exact": true,
+    "grouped_vs_fused_exact": true,
+    "cohort_results_present": true,
+    "cohort_kernel_exact": true,
+    "cohort_ids_exact": true,
+    "streaming_cells_present": true,
+    "streaming_accounting": true
+  },
+  "verification_passed": true,
+  "all_pass": false,
+  "decision": "native-grouped-operator-go-resident-experimental-streaming-gated",
+  "no_go_reasons": [
+    "cache-aware streaming loaded more bytes than round-robin in at least one cell",
+    "independent-session full logits are not bit-exact under batched ATen execution"
+  ],
+  "verification_failures": [],
+  "inputs": {
+    "summary": "/root/workspace/SparceFlow/benchmarks/results/2026-07-22/stage7_8/summary.json",
+    "summary_sha256": "21b99b7723910c904d8b8cec428f0420667f9c82199e8bf59c8686723340f749",
+    "grouped": "/root/workspace/SparceFlow/benchmarks/results/2026-07-22/stage7_8/grouped_operator.json",
+    "grouped_sha256": "ee848380fb31394db54114d8267bf4630af99d72022a06095ff9ff0503f6ac74",
+    "cohorts": [
+      "/root/workspace/SparceFlow/benchmarks/results/2026-07-22/stage7_8/resident_cohort_b4_profile.json",
+      "/root/workspace/SparceFlow/benchmarks/results/2026-07-22/stage7_8/resident_cohort_b8.json"
+    ],
+    "streaming": "/root/workspace/SparceFlow/benchmarks/results/2026-07-22/stage7_8/streaming_subcohort_ratio025.json",
+    "streaming_sha256": "f285498e77be181a7ae16600b347d4b5ba17feab63a32c6a6bc68c676de88c2c"
+  }
+}

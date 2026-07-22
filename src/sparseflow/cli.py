@@ -376,7 +376,7 @@ def main(argv: list[str] | None = None) -> int:
     int8_check_p.add_argument("--prefetch-budget-ratio", type=float, default=0.10)
     int8_check_p.add_argument("--coalesce-gap", type=int, default=0)
     int8_check_p.add_argument(
-        "--native-dispatch", choices=("legacy", "fused", "hybrid"), default="legacy"
+        "--native-dispatch", choices=("legacy", "fused", "hybrid", "grouped"), default="legacy"
     )
     int8_check_p.add_argument("--deterministic-io-pipeline", action="store_true")
     int8_check_p.add_argument("--fuse-deltanet-projections", action="store_true")

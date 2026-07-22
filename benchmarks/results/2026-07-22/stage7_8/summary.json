@@ -1,0 +1,1731 @@
+{
+  "schema_version": 1,
+  "kind": "sparseflow_stage7_8_summary",
+  "agent": "Main Dev",
+  "operator": {
+    "exact_against_fused_all_batches": true,
+    "b1_grouped_over_fused": 1.0041871555404493,
+    "b1_no_regression": true,
+    "b4_grouped_speedup": 1.985265828615396,
+    "b4_target_1_95": true,
+    "b8_grouped_speedup": 3.1016219477245213,
+    "b8_nonzero": true,
+    "batches": [
+      {
+        "batch_size": 1,
+        "fused_speedup": 3.7015114809942284,
+        "grouped_speedup": 3.7170102852999096,
+        "grouped_over_fused": 1.0041871555404493,
+        "exact": true,
+        "route_groups": {
+          "rows": 1,
+          "assignments": 320,
+          "groups": 320,
+          "groups_with_reuse": 0,
+          "assignment_fraction_in_reused_groups": 0.0,
+          "multiplicity": {
+            "1": 320
+          },
+          "per_layer": [
+            {
+              "layer": 0,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 1,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 2,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 3,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 4,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 5,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 6,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 7,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 8,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 9,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 10,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 11,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 12,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 13,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 14,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 15,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 16,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 17,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 18,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 19,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 20,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 21,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 22,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 23,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 24,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 25,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 26,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 27,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 28,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 29,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 30,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 31,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 32,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 33,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 34,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 35,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 36,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 37,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 38,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            },
+            {
+              "layer": 39,
+              "assignments": 8,
+              "unique_experts": 8,
+              "multiplicity": {
+                "1": 8
+              }
+            }
+          ]
+        }
+      },
+      {
+        "batch_size": 2,
+        "fused_speedup": 1.5087350346688901,
+        "grouped_speedup": 2.115526454521015,
+        "grouped_over_fused": 1.4021855434577963,
+        "exact": true,
+        "route_groups": {
+          "rows": 2,
+          "assignments": 640,
+          "groups": 346,
+          "groups_with_reuse": 294,
+          "assignment_fraction_in_reused_groups": 0.91875,
+          "multiplicity": {
+            "1": 52,
+            "2": 294
+          },
+          "per_layer": [
+            {
+              "layer": 0,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 1,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 2,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 3,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 4,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 5,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 6,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 7,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 8,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 9,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 10,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 11,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 12,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 13,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 14,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 15,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 16,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 17,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 18,
+              "assignments": 16,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 4,
+                "2": 6
+              }
+            },
+            {
+              "layer": 19,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 20,
+              "assignments": 16,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 6,
+                "2": 5
+              }
+            },
+            {
+              "layer": 21,
+              "assignments": 16,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 4,
+                "2": 6
+              }
+            },
+            {
+              "layer": 22,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 23,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 24,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 25,
+              "assignments": 16,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 4,
+                "2": 6
+              }
+            },
+            {
+              "layer": 26,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 27,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 28,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 29,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 30,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 31,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 32,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 33,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 34,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 35,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 36,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 37,
+              "assignments": 16,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 2,
+                "2": 7
+              }
+            },
+            {
+              "layer": 38,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            },
+            {
+              "layer": 39,
+              "assignments": 16,
+              "unique_experts": 8,
+              "multiplicity": {
+                "2": 8
+              }
+            }
+          ]
+        }
+      },
+      {
+        "batch_size": 4,
+        "fused_speedup": 1.7024780000092385,
+        "grouped_speedup": 1.985265828615396,
+        "grouped_over_fused": 1.1661036610191866,
+        "exact": true,
+        "route_groups": {
+          "rows": 4,
+          "assignments": 1280,
+          "groups": 371,
+          "groups_with_reuse": 330,
+          "assignment_fraction_in_reused_groups": 0.96796875,
+          "multiplicity": {
+            "1": 41,
+            "2": 23,
+            "3": 35,
+            "4": 272
+          },
+          "per_layer": [
+            {
+              "layer": 0,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 1,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 2,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 3,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 4,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "2": 1,
+                "3": 2,
+                "4": 6
+              }
+            },
+            {
+              "layer": 5,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 6,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 7,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 2,
+                "3": 2,
+                "4": 6
+              }
+            },
+            {
+              "layer": 8,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "2": 1,
+                "3": 3,
+                "4": 5
+              }
+            },
+            {
+              "layer": 9,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 10,
+              "assignments": 32,
+              "unique_experts": 8,
+              "multiplicity": {
+                "4": 8
+              }
+            },
+            {
+              "layer": 11,
+              "assignments": 32,
+              "unique_experts": 8,
+              "multiplicity": {
+                "4": 8
+              }
+            },
+            {
+              "layer": 12,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "2": 1,
+                "3": 2,
+                "4": 6
+              }
+            },
+            {
+              "layer": 13,
+              "assignments": 32,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 3,
+                "2": 1,
+                "3": 1,
+                "4": 6
+              }
+            },
+            {
+              "layer": 14,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 15,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 16,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 17,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "2": 1,
+                "3": 2,
+                "4": 6
+              }
+            },
+            {
+              "layer": 18,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "2": 2,
+                "3": 1,
+                "4": 6
+              }
+            },
+            {
+              "layer": 19,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 20,
+              "assignments": 32,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 2,
+                "2": 2,
+                "3": 2,
+                "4": 5
+              }
+            },
+            {
+              "layer": 21,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "2": 3,
+                "3": 2,
+                "4": 5
+              }
+            },
+            {
+              "layer": 22,
+              "assignments": 32,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 3,
+                "2": 1,
+                "3": 1,
+                "4": 6
+              }
+            },
+            {
+              "layer": 23,
+              "assignments": 32,
+              "unique_experts": 8,
+              "multiplicity": {
+                "4": 8
+              }
+            },
+            {
+              "layer": 24,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "2": 2,
+                "3": 1,
+                "4": 6
+              }
+            },
+            {
+              "layer": 25,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "2": 2,
+                "3": 1,
+                "4": 6
+              }
+            },
+            {
+              "layer": 26,
+              "assignments": 32,
+              "unique_experts": 8,
+              "multiplicity": {
+                "4": 8
+              }
+            },
+            {
+              "layer": 27,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 28,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 29,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 30,
+              "assignments": 32,
+              "unique_experts": 8,
+              "multiplicity": {
+                "4": 8
+              }
+            },
+            {
+              "layer": 31,
+              "assignments": 32,
+              "unique_experts": 8,
+              "multiplicity": {
+                "4": 8
+              }
+            },
+            {
+              "layer": 32,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 33,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 34,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 35,
+              "assignments": 32,
+              "unique_experts": 8,
+              "multiplicity": {
+                "4": 8
+              }
+            },
+            {
+              "layer": 36,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 37,
+              "assignments": 32,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 38,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            },
+            {
+              "layer": 39,
+              "assignments": 32,
+              "unique_experts": 9,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 7
+              }
+            }
+          ]
+        }
+      },
+      {
+        "batch_size": 8,
+        "fused_speedup": 2.0461425898097962,
+        "grouped_speedup": 3.1016219477245213,
+        "grouped_over_fused": 1.5158386141665912,
+        "exact": true,
+        "route_groups": {
+          "rows": 8,
+          "assignments": 2560,
+          "groups": 453,
+          "groups_with_reuse": 401,
+          "assignment_fraction_in_reused_groups": 0.9796875,
+          "multiplicity": {
+            "1": 52,
+            "2": 30,
+            "3": 28,
+            "4": 70,
+            "5": 14,
+            "6": 13,
+            "7": 32,
+            "8": 214
+          },
+          "per_layer": [
+            {
+              "layer": 0,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "4": 7,
+                "5": 1,
+                "7": 1,
+                "8": 3
+              }
+            },
+            {
+              "layer": 1,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 1,
+                "2": 1,
+                "3": 1,
+                "4": 1,
+                "6": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 2,
+              "assignments": 64,
+              "unique_experts": 9,
+              "multiplicity": {
+                "2": 1,
+                "7": 2,
+                "8": 6
+              }
+            },
+            {
+              "layer": 3,
+              "assignments": 64,
+              "unique_experts": 15,
+              "multiplicity": {
+                "1": 5,
+                "4": 4,
+                "5": 1,
+                "6": 1,
+                "8": 4
+              }
+            },
+            {
+              "layer": 4,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "2": 1,
+                "3": 1,
+                "4": 1,
+                "7": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 5,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "3": 2,
+                "4": 4,
+                "5": 1,
+                "6": 1,
+                "7": 1,
+                "8": 3
+              }
+            },
+            {
+              "layer": 6,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "4": 2,
+                "7": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 7,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "1": 3,
+                "4": 2,
+                "6": 1,
+                "7": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 8,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "2": 1,
+                "3": 2,
+                "4": 1,
+                "7": 4,
+                "8": 3
+              }
+            },
+            {
+              "layer": 9,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "4": 1,
+                "5": 1,
+                "7": 2,
+                "8": 5
+              }
+            },
+            {
+              "layer": 10,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 3,
+                "8": 6
+              }
+            },
+            {
+              "layer": 11,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "4": 3,
+                "8": 6
+              }
+            },
+            {
+              "layer": 12,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "1": 1,
+                "2": 2,
+                "4": 3,
+                "7": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 13,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "2": 2,
+                "4": 1,
+                "5": 2,
+                "6": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 14,
+              "assignments": 64,
+              "unique_experts": 9,
+              "multiplicity": {
+                "3": 1,
+                "5": 1,
+                "8": 7
+              }
+            },
+            {
+              "layer": 15,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 2,
+                "3": 1,
+                "4": 1,
+                "7": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 16,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "5": 1,
+                "7": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 17,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "2": 1,
+                "3": 1,
+                "4": 3,
+                "7": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 18,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "3": 1,
+                "4": 1,
+                "6": 1,
+                "7": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 19,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "2": 1,
+                "7": 3,
+                "8": 5
+              }
+            },
+            {
+              "layer": 20,
+              "assignments": 64,
+              "unique_experts": 15,
+              "multiplicity": {
+                "1": 3,
+                "3": 3,
+                "4": 4,
+                "6": 1,
+                "7": 2,
+                "8": 2
+              }
+            },
+            {
+              "layer": 21,
+              "assignments": 64,
+              "unique_experts": 13,
+              "multiplicity": {
+                "2": 3,
+                "3": 1,
+                "4": 2,
+                "5": 2,
+                "6": 1,
+                "7": 1,
+                "8": 3
+              }
+            },
+            {
+              "layer": 22,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "1": 1,
+                "2": 1,
+                "3": 2,
+                "4": 2,
+                "7": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 23,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "4": 3,
+                "5": 1,
+                "7": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 24,
+              "assignments": 64,
+              "unique_experts": 13,
+              "multiplicity": {
+                "1": 2,
+                "2": 1,
+                "3": 1,
+                "4": 3,
+                "5": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 25,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "1": 2,
+                "2": 2,
+                "4": 1,
+                "7": 2,
+                "8": 5
+              }
+            },
+            {
+              "layer": 26,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 1,
+                "8": 7
+              }
+            },
+            {
+              "layer": 27,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 2,
+                "3": 1,
+                "4": 1,
+                "7": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 28,
+              "assignments": 64,
+              "unique_experts": 13,
+              "multiplicity": {
+                "1": 4,
+                "2": 1,
+                "4": 1,
+                "6": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 29,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 2,
+                "3": 1,
+                "4": 1,
+                "7": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 30,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "3": 1,
+                "4": 2,
+                "5": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 31,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "2": 2,
+                "4": 1,
+                "8": 7
+              }
+            },
+            {
+              "layer": 32,
+              "assignments": 64,
+              "unique_experts": 10,
+              "multiplicity": {
+                "1": 1,
+                "3": 1,
+                "4": 1,
+                "8": 7
+              }
+            },
+            {
+              "layer": 33,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 1,
+                "2": 2,
+                "3": 1,
+                "8": 7
+              }
+            },
+            {
+              "layer": 34,
+              "assignments": 64,
+              "unique_experts": 11,
+              "multiplicity": {
+                "1": 2,
+                "3": 1,
+                "5": 1,
+                "6": 1,
+                "8": 6
+              }
+            },
+            {
+              "layer": 35,
+              "assignments": 64,
+              "unique_experts": 9,
+              "multiplicity": {
+                "4": 2,
+                "8": 7
+              }
+            },
+            {
+              "layer": 36,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "1": 2,
+                "4": 4,
+                "6": 1,
+                "8": 5
+              }
+            },
+            {
+              "layer": 37,
+              "assignments": 64,
+              "unique_experts": 13,
+              "multiplicity": {
+                "1": 3,
+                "2": 1,
+                "3": 1,
+                "4": 2,
+                "8": 6
+              }
+            },
+            {
+              "layer": 38,
+              "assignments": 64,
+              "unique_experts": 12,
+              "multiplicity": {
+                "1": 3,
+                "2": 1,
+                "3": 1,
+                "8": 7
+              }
+            },
+            {
+              "layer": 39,
+              "assignments": 64,
+              "unique_experts": 13,
+              "multiplicity": {
+                "1": 1,
+                "2": 3,
+                "3": 1,
+                "4": 1,
+                "6": 2,
+                "7": 2,
+                "8": 3
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "resident": {
+    "cells": [
+      {
+        "batch_size": 4,
+        "independent_to_grouped_speedup": 2.16717135892778,
+        "grouped_over_fused_batch_decode_speedup": 1.0915752480091396,
+        "grouped_vs_fused_exact": true,
+        "independent_ids_text_argmax_exact": true,
+        "independent_logit_fingerprints_exact": false,
+        "independent_logit_error": {
+          "max_abs": 1.0,
+          "mean_abs": 0.12067623728329373,
+          "argmax_equal": true,
+          "allclose_atol_1e-3": false,
+          "allclose_atol_1e-2": false
+        }
+      },
+      {
+        "batch_size": 8,
+        "independent_to_grouped_speedup": 2.4199626476814013,
+        "grouped_over_fused_batch_decode_speedup": 0.8617380268018303,
+        "grouped_vs_fused_exact": true,
+        "independent_ids_text_argmax_exact": true,
+        "independent_logit_fingerprints_exact": false,
+        "independent_logit_error": {
+          "max_abs": 1.46875,
+          "mean_abs": 0.13859849320244544,
+          "argmax_equal": true,
+          "allclose_atol_1e-3": false,
+          "allclose_atol_1e-2": false
+        }
+      }
+    ],
+    "kernel_exact": true,
+    "behavior_exact": true,
+    "speed_gate": true
+  },
+  "streaming": {
+    "cells": [
+      {
+        "schedule_id": "sync-b4",
+        "budget_gib": 4.0,
+        "working_set_ratio": 0.25,
+        "cache_aware_loaded_gib": 32.05467224121094,
+        "round_robin_loaded_gib": 32.04880142211914,
+        "loaded_ratio": 1.0001831837332844,
+        "cohorts": 124,
+        "budget_respected": true,
+        "leases_released": true,
+        "gate_pass": false
+      },
+      {
+        "schedule_id": "sync-b4",
+        "budget_gib": 8.0,
+        "working_set_ratio": 0.25,
+        "cache_aware_loaded_gib": 16.19465446472168,
+        "round_robin_loaded_gib": 16.185848236083984,
+        "loaded_ratio": 1.000544069640914,
+        "cohorts": 57,
+        "budget_respected": true,
+        "leases_released": true,
+        "gate_pass": false
+      },
+      {
+        "schedule_id": "sync-b8",
+        "budget_gib": 4.0,
+        "working_set_ratio": 0.25,
+        "cache_aware_loaded_gib": 101.60920143127441,
+        "round_robin_loaded_gib": 101.59745979309082,
+        "loaded_ratio": 1.0001155701944469,
+        "cohorts": 246,
+        "budget_respected": true,
+        "leases_released": true,
+        "gate_pass": false
+      },
+      {
+        "schedule_id": "sync-b8",
+        "budget_gib": 8.0,
+        "working_set_ratio": 0.25,
+        "cache_aware_loaded_gib": 43.291419982910156,
+        "round_robin_loaded_gib": 43.5790901184082,
+        "loaded_ratio": 0.9933988953253402,
+        "cohorts": 108,
+        "budget_respected": true,
+        "leases_released": true,
+        "gate_pass": true
+      }
+    ],
+    "gate": false
+  },
+  "gates": {
+    "operator": true,
+    "resident_kernel": true,
+    "resident_behavior": true,
+    "resident_speed": true,
+    "streaming": false
+  },
+  "all_pass": false,
+  "decision": "native-grouped-operator-go-resident-experimental-streaming-gated",
+  "no_go_reasons": [
+    "cache-aware streaming loaded more bytes than round-robin in at least one cell",
+    "independent-session full logits are not bit-exact under batched ATen execution"
+  ],
+  "next_scope": "profile-gated native dispatcher and cache admission before making grouped the default"
+}
