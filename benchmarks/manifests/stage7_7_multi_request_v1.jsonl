@@ -1,0 +1,20 @@
+{"id":"zh-runtime","group":"chinese","text":"请用三句话解释稀疏专家模型如何通过路由器减少每个 token 的计算量，并说明专家缓存为什么重要。"}
+{"id":"zh-storage","group":"chinese","text":"比较把大模型专家权重放在内存、显存和 NVMe 上的优缺点，重点讨论延迟和容量。"}
+{"id":"zh-debug","group":"chinese","text":"设计一个排查本地 MoE 推理速度突然下降的步骤清单，要求区分计算、缓存和磁盘问题。"}
+{"id":"zh-benchmark","group":"chinese","text":"解释 aggregate throughput、token latency、TTFT 和 P95 在多请求推理中的区别。"}
+{"id":"en-routing","group":"english","text":"Explain how a sparse mixture-of-experts router can activate only a small number of experts for each token."}
+{"id":"en-cache","group":"english","text":"Compare an LRU expert cache with a popularity-based cache for a disk-streaming MoE runtime."}
+{"id":"en-scheduler","group":"english","text":"Describe the fairness risks of continuous batching when requests have different prompt and generation lengths."}
+{"id":"en-correctness","group":"english","text":"Why must resident and streaming inference use the same routing order and accumulation order during a correctness test?"}
+{"id":"code-python","group":"code","text":"Write a Python function that groups token assignments by expert and returns the inverse permutation."}
+{"id":"code-cache","group":"code","text":"Implement a small byte-budget LRU cache in Python and explain how eviction should handle pinned entries."}
+{"id":"code-profile","group":"code","text":"Write pseudocode for a benchmark that separates prefill time, decode time, disk reads, and cache misses."}
+{"id":"code-batch","group":"code","text":"Show how several token rows can be grouped by the same expert before a matrix multiplication."}
+{"id":"math-read","group":"math","text":"A model uses 40 layers, top-8 routing, and 6 MiB per expert. Calculate the cold routed read volume for one token."}
+{"id":"math-cache","group":"math","text":"If four requests select 32 expert assignments and their union contains 20 experts, compute the assignment reuse ratio."}
+{"id":"math-throughput","group":"math","text":"Explain how aggregate tokens per second changes when four sessions share one grouped decoder step."}
+{"id":"math-fairness","group":"math","text":"Define Jain's fairness index and explain what a low value means for multi-request inference."}
+{"id":"locality-conversation","group":"locality","text":"We are continuing a design discussion about tiered-memory MoE inference. Explain why related conversations may reuse experts."}
+{"id":"locality-code","group":"locality","text":"Continue a code review of an expert cache: focus on cache locality, pinned leases, and stable tensor views."}
+{"id":"knowledge-model","group":"knowledge","text":"Give a concise overview of why model total parameter count and active parameter count can differ in an MoE model."}
+{"id":"knowledge-io","group":"knowledge","text":"Explain why a larger expert cache can reduce reads but still fail to improve end-to-end token throughput."}

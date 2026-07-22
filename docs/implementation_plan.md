@@ -349,6 +349,19 @@ The next phase may introduce native generation/session ownership and a
 multi-request scheduler. Attention/DeltaNet rewrites remain out of scope unless
 new profiling crosses the component and expected-gain gates. [Main Dev]
 
+### Phase 7.7 status: feasibility gates complete; streaming scheduler NO-GO
+
+Stage 7.7 combined real independent route traces, benchmarked real hidden-state
+multi-row execution, and replayed shared cache/union I/O. Route overlap and the
+exact B=4 grouped-kernel gate passed, but the shared streaming normalized-read
+gate failed at 4 GiB because union scheduling thrashed more than round-robin.
+The full fixed-cohort scheduler is therefore intentionally not implemented;
+the next bounded scope is resident-only batching. The complete protocol,
+schema, files, metrics, GO/NO-GO gates, and correctness boundaries are in
+[`docs/stage7_7_plan.md`](stage7_7_plan.md). Results are recorded in
+[`docs/results/qwen36_stage7_7_multi_request_20260722.md`](results/qwen36_stage7_7_multi_request_20260722.md).
+[Main Dev]
+
 ## Early Non-goals
 
 - 阶段 6 暂不支持 vision 输入、MTP/speculative decoding 和生产级 serving。
