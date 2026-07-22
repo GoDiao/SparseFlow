@@ -5,6 +5,15 @@ description = "Tiered-memory tooling for sparse expert models."
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+runtime = [
+    "torch",
+    "transformers",
+    "safetensors",
+    "accelerate",
+]
+dev = ["pytest"]
+
 [project.scripts]
 sparseflow = "sparseflow.cli:main"
 

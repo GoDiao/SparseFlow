@@ -40,6 +40,15 @@ from .text_runtime import (
 )
 from .plan import build_plan
 from .policy_benchmark import discover_trace_paths, run_policy_sweep
+from .release import (
+    PRESETS,
+    apply_preset,
+    container_identity,
+    doctor,
+    get_preset,
+    model_identity,
+    prepare_disk_check,
+)
 from .route_trace import (
     capture_route_trace,
     capture_route_traces,
@@ -63,6 +72,50 @@ def main(argv: list[str] | None = None) -> int:
     plan_p.add_argument("--ctx", type=int, default=4096, help="Context length for memory projection.")
     plan_p.add_argument("--reserve", type=float, default=2.5, help="Page-cache/runtime reserve in decimal GB.")
     plan_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    preset_p = sub.add_parser(
+        "preset",
+        help="Show the supported Public Alpha runtime presets.",
+    )
+    preset_p.add_argument("name", choices=tuple(sorted(PRESETS)), nargs="?", default=None)
+    preset_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    doctor_p = sub.add_parser(
+        "doctor",
+        help="Run read-only model, INT8, disk, CPU, and runtime readiness checks.",
+    )
+    doctor_p.add_argument("model")
+    doctor_p.add_argument("--preset", choices=tuple(sorted(PRESETS)), default="stable")
+    doctor_p.add_argument("--int8-container")
+    doctor_p.add_argument("--cache-bytes", help="Override low-memory cache budget, e.g. 4GiB.")
+    doctor_p.add_argument("--check-native", action="store_true", help="Build and load the native extension.")
+    doctor_p.add_argument("--full-payload-hash", action="store_true", help="Hash all model payload bytes; expensive.")
+    doctor_p.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+
+    prepare_p = sub.add_parser(
+        "prepare-int8",
+        help="Create/resume a complete INT8 expert container and execution metadata.",
+    )
+    prepare_p.add_argument("model")
+    prepare_p.add_argument("--output", required=True)
+    prepare_p.add_argument("--layers", help="Layer list/ranges, e.g. 0-3 or 0,2,4.")
+    prepare_p.add_argument("--report")
+    prepare_p.add_argument("--no-resume", action="store_true")
+    prepare_p.add_argument("--json", action="store_true")
+
+    run_p = sub.add_parser(
+        "run",
+        help="Run a Public Alpha Qwen3.6 preset.",
+    )
+    run_p.add_argument("model")
+    run_p.add_argument("--preset", choices=tuple(sorted(PRESETS)), default="stable")
+    run_p.add_argument("--int8-container", required=True)
+    run_p.add_argument("--prompt", action="append", required=True, help="Prompt; repeat for experimental-batch.")
+    run_p.add_argument("--max-new-tokens", type=int, default=32)
+    run_p.add_argument("--cache-bytes", help="Override the low-memory preset budget.")
+    run_p.add_argument("--telemetry-level", choices=("none", "summary", "profile", "layer"), default="summary")
+    run_p.add_argument("--output")
+    run_p.add_argument("--json", action="store_true")
 
     native_plan_p = sub.add_parser(
         "native-plan",
@@ -423,6 +476,153 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
+        if args.command == "preset":
+            if args.name is None:
+                result = {
+                    "schema_version": 1,
+                    "kind": "sparseflow_public_alpha_presets",
+                    "agent": "Main Dev",
+                    "presets": [PRESETS[name].as_dict() for name in sorted(PRESETS)],
+                }
+            else:
+                result = {
+                    "schema_version": 1,
+                    "kind": "sparseflow_public_alpha_preset",
+                    "agent": "Main Dev",
+                    "preset": get_preset(args.name).as_dict(),
+                }
+            print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_preset(result))
+            return 0
+        if args.command == "doctor":
+            cache_bytes = _parse_single_byte_budget(args.cache_bytes) if args.cache_bytes else None
+            result = doctor(
+                args.model,
+                preset=args.preset,
+                int8_container_dir=args.int8_container,
+                cache_bytes=cache_bytes,
+                check_native=args.check_native,
+                full_payload_hash=args.full_payload_hash,
+            )
+            print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_doctor(result))
+            return 0 if result["ready"] else 1
+        if args.command == "prepare-int8":
+            layers = None
+            if args.layers:
+                locator = ExpertLocator(args.model)
+                layers = parse_layers(args.layers, max(locator.layers) + 1)
+            resume = not args.no_resume
+            disk = prepare_disk_check(args.model, args.output)
+            if not disk["pass"]:
+                raise ValueError(
+                    "insufficient disk space for resumable INT8 preparation: "
+                    f"free={disk['free_bytes']} required={disk['required_new_bytes']}"
+                )
+            converted = convert_experts_int8(
+                args.model,
+                args.output,
+                layers=layers,
+                resume=resume,
+            )
+            execution = build_int8_execution_metadata(args.output, resume=resume)
+            result = {
+                "schema_version": 1,
+                "kind": "sparseflow_public_alpha_int8_prepare",
+                "agent": "Main Dev",
+                "model": model_identity(args.model),
+                "container": container_identity(args.output),
+                "disk": disk,
+                "conversion": converted,
+                "execution": execution,
+            }
+            encoded = json.dumps(result, indent=2, ensure_ascii=False)
+            if args.report:
+                report = Path(args.report).expanduser()
+                report.parent.mkdir(parents=True, exist_ok=True)
+                report.write_text(encoded + "\n", encoding="utf-8")
+            print(encoded if args.json else _format_prepare_int8(result))
+            return 0
+        if args.command == "run":
+            cache_bytes = _parse_single_byte_budget(args.cache_bytes) if args.cache_bytes else None
+            config = apply_preset(
+                args.preset,
+                cache_bytes=cache_bytes,
+                telemetry_level=args.telemetry_level,
+            )
+            prompts = tuple(args.prompt)
+            if config["batch_mode"] == "fixed-cohort":
+                if len(prompts) < 2:
+                    raise ValueError("experimental-batch requires at least two --prompt values")
+                from .fixed_cohort import generate_fixed_cohort
+
+                runtime = Qwen36TextRuntime.from_pretrained(
+                    args.model,
+                    mode=config["mode"],
+                    dtype="bf16",
+                    cache_slots=None,
+                    cache_bytes=None,
+                    prefetch_workers=0,
+                    coalesce_gap=0,
+                    cache_policy=config["cache_policy"],
+                    prefetch_policy=config["prefetch_policy"],
+                    telemetry_level=args.telemetry_level,
+                    experts_implementation="eager",
+                    load_mode=config["load_mode"],
+                    expert_storage=config["expert_storage"],
+                    int8_container=args.int8_container,
+                    native_dispatch=config["native_dispatch"],
+                )
+                try:
+                    result = generate_fixed_cohort(
+                        runtime,
+                        prompts,
+                        max_new_tokens=args.max_new_tokens,
+                        stop_on_eos=False,
+                        capture_logits=False,
+                    )
+                finally:
+                    runtime.close()
+            else:
+                runtime = Qwen36TextRuntime.from_pretrained(
+                    args.model,
+                    mode=config["mode"],
+                    dtype="bf16",
+                    cache_slots=None if config["cache_bytes"] is not None else 16,
+                    cache_bytes=config["cache_bytes"],
+                    prefetch_workers=config["prefetch_workers"],
+                    coalesce_gap=0,
+                    cache_policy=config["cache_policy"],
+                    prefetch_policy=config["prefetch_policy"],
+                    telemetry_level=args.telemetry_level,
+                    experts_implementation="eager",
+                    load_mode=config["load_mode"],
+                    expert_storage=config["expert_storage"],
+                    int8_container=args.int8_container,
+                    native_dispatch=config["native_dispatch"],
+                )
+                try:
+                    result = runtime.greedy_generate(
+                        prompts[0],
+                        max_new_tokens=args.max_new_tokens,
+                        record_logit_fingerprints=True,
+                    )
+                finally:
+                    runtime.close()
+            result = {
+                "schema_version": 1,
+                "kind": "sparseflow_public_alpha_run",
+                "agent": "Main Dev",
+                "preset": config,
+                "model": model_identity(args.model),
+                "container": container_identity(args.int8_container),
+                "result": result,
+            }
+            encoded = json.dumps(result, indent=2, ensure_ascii=False)
+            if args.output:
+                output = Path(args.output).expanduser()
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(encoded + "\n", encoding="utf-8")
+            print(encoded if args.json else _format_public_run(result))
+            return 0
         if args.command == "inspect":
             result = analyze_model(args.model)
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_inspect(result))
@@ -844,6 +1044,88 @@ def _format_inspect(result: dict[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _format_preset(result: dict[str, Any]) -> str:
+    presets = result.get("presets")
+    if presets is not None:
+        lines = ["SparseFlow Public Alpha presets"]
+        for item in presets:
+            lines.append(
+                f"  {item['name']:<20} {item['public_status']:<22} {item['description']}"
+            )
+        return "\n".join(lines)
+    item = result["preset"]
+    return "\n".join(
+        [
+            f"SparseFlow preset: {item['name']}",
+            f"status       {item['public_status']}",
+            f"storage      {item['mode']}",
+            f"dispatch     {item['native_dispatch']}",
+            f"quantization {item['expert_storage']}",
+            f"cache        {item['cache_policy']} {item['cache_bytes'] or 'none'}",
+            f"prefetch     {item['prefetch_policy']}",
+            f"batch        {item['batch_mode']}",
+            f"description  {item['description']}",
+        ]
+    )
+
+
+def _format_doctor(result: dict[str, Any]) -> str:
+    preset = result["preset"]
+    lines = [
+        f"SparseFlow doctor: {result['model']['path'] if result.get('model') else 'unknown model'}",
+        f"preset       {preset['name']} ({preset['public_status']})",
+        f"ready        {result['ready']}",
+        f"errors       {result['errors']}",
+        f"warnings     {result['warnings']}",
+    ]
+    for check in result["checks"]:
+        lines.append(f"{check['status']:<12} {check['id']}: {check['detail']}")
+    return "\n".join(lines)
+
+
+def _format_prepare_int8(result: dict[str, Any]) -> str:
+    conversion = result["conversion"]
+    execution = result["execution"]
+    return "\n".join(
+        [
+            f"SparseFlow prepare-int8: {result['container']['path']}",
+            f"format       {conversion['format_id']}",
+            f"layers       {conversion['layers']}",
+            f"experts      {conversion['experts']}",
+            f"weights      {format_bytes(conversion['physical_bytes'])}",
+            f"row sums     {format_bytes(execution['physical_bytes'])}",
+            f"container id {result['container']['metadata_sha256']}",
+            f"resumed      {conversion['resumed_layers']} layers",
+        ]
+    )
+
+
+def _format_public_run(result: dict[str, Any]) -> str:
+    config = result["preset"]
+    output = result["result"]
+    if config["batch_mode"] == "fixed-cohort":
+        return "\n".join(
+            [
+                f"SparseFlow run: {config['name']}",
+                f"batch        {output['batch_size']}",
+                f"tokens       {output['generated_tokens']}",
+                f"aggregate    {output['aggregate_decode_tok_per_second']:.4f} tok/s",
+                f"session      {output['session_decode_tok_per_second']:.4f} tok/s",
+                f"texts        {output['texts']}",
+            ]
+        )
+    return "\n".join(
+        [
+            f"SparseFlow run: {config['name']}",
+            f"storage      {config['mode']}",
+            f"dispatch     {config['native_dispatch']}",
+            f"tokens       {output['generated_tokens']}",
+            f"decode       {sum(output['decode_token_seconds']):.3f}s",
+            f"text         {output['text']}",
+        ]
+    )
 
 
 def _format_int8_conversion(result: dict[str, Any]) -> str:
