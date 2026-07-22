@@ -3,8 +3,8 @@
   "kind": "sparseflow_stage7_8_verification",
   "agent": "Main Dev",
   "git": {
-    "commit": "b2955039495908e7f0aa1e5de784bbfbf64588ea",
-    "clean": false
+    "commit": "721dd0388d45df097d51b9fca417f94fdcbe6d8b",
+    "clean": true
   },
   "checks": {
     "summary_kind": true,
