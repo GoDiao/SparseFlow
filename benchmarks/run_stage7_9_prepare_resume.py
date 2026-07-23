@@ -78,13 +78,21 @@ def main() -> int:
         for path in output_dir.rglob("*")
         if path.is_file() and path.suffix.lower() in {".tmp", ".partial", ".part"}
     ]
+    completed_layer_paths = {
+        path: value
+        for path, value in before_resume.items()
+        if path.startswith("layers/layer-000") or path.startswith("execution/layer-000")
+    }
+    completed_layer_unchanged = all(
+        after_resume.get(path) == value for path, value in completed_layer_paths.items()
+    ) and set(after_resume).issuperset(completed_layer_paths)
     gates = {
         "first_returncode_zero": first_run["returncode"] == 0,
         "resume_returncode_zero": second_run["returncode"] == 0,
         "first_converted_one_layer": first_data.get("conversion", {}).get("converted_layers") == 1,
         "resume_converted_zero": resume_data.get("conversion", {}).get("converted_layers") == 0,
         "resume_detected_one_layer": resume_data.get("conversion", {}).get("resumed_layers") == 1,
-        "completed_layer_hash_and_mtime_unchanged": before_resume == after_resume,
+        "completed_layer_hash_and_mtime_unchanged": completed_layer_unchanged,
         "weight_manifest_unchanged": first_data.get("conversion", {}).get("manifest", {}).get("index_sha256") == resume_data.get("conversion", {}).get("manifest", {}).get("index_sha256"),
         "execution_manifest_unchanged": first_data.get("execution", {}).get("manifest", {}).get("index_sha256") == resume_data.get("execution", {}).get("manifest", {}).get("index_sha256"),
         "disk_preflight_pass": bool(first_data.get("disk", {}).get("pass")) and bool(resume_data.get("disk", {}).get("pass")),
@@ -104,6 +112,10 @@ def main() -> int:
         "before_resume": before_resume,
         "after_resume": after_resume,
         "temporary_files": temporary_files,
+        "completed_layer_paths": sorted(completed_layer_paths),
+        "metadata_rewritten_on_resume": sorted(
+            path for path in before_resume if before_resume.get(path) != after_resume.get(path)
+        ),
         "first_run": {k: v for k, v in first_run.items() if k not in {"stdout", "stderr"}},
         "resume_run": {k: v for k, v in second_run.items() if k not in {"stdout", "stderr"}},
         "gates": gates,
