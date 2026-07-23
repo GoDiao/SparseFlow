@@ -193,7 +193,11 @@ def verify(
         "server_queue_gate": server_queue,
         "conversation_gate": conversation,
         "api_contract_gate": _api_contract_gate(root, api_contract),
-        "installation_gate": _status(None if installation is None else bool(installation.get("passed"))),
+        "installation_gate": _status(
+            None
+            if installation is None
+            else bool(installation.get("passed") and installation.get("clean_replay"))
+        ),
         "frontend_readiness_gate": "NOT-RUN",
     }
     required_for_frontend = tuple(name for name in GATES if name not in {"frontend_readiness_gate", "cli_performance_gate"})
