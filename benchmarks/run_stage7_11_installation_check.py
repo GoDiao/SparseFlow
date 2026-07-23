@@ -30,7 +30,7 @@ def _under(path: Path, root: Path) -> bool:
         return False
 
 
-def check_installation(root: Path, *, clean_replay: bool) -> dict[str, Any]:
+def check_installation(root: Path, *, clean_replay: bool, run_tests: bool = False) -> dict[str, Any]:
     python_path = Path(sys.executable).resolve()
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(root / "src")
@@ -72,6 +72,24 @@ def check_installation(root: Path, *, clean_replay: bool) -> dict[str, Any]:
         if os.environ.get(name)
     }
     cache_on_project_drive = all(_under(Path(value), root) for value in cache_values.values())
+    test_result: dict[str, Any] | None = None
+    if run_tests:
+        completed = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"],
+            cwd=root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        test_result = {
+            "return_code": completed.returncode,
+            "passed": completed.returncode == 0,
+            "stdout_tail": completed.stdout[-4000:],
+            "stderr_tail": completed.stderr[-4000:],
+        }
     checks = {
         "python_on_project_drive": _under(python_path, root),
         "runtime_import": torch_import_ok and _version("transformers") is not None,
@@ -81,6 +99,8 @@ def check_installation(root: Path, *, clean_replay: bool) -> dict[str, Any]:
         "cache_paths_on_project_drive": cache_on_project_drive,
         "clean_replay_declared": clean_replay,
     }
+    if run_tests:
+        checks["full_test_suite"] = bool(test_result and test_result["passed"])
     return {
         "schema_version": 1,
         "kind": "sparseflow_stage7_11_installation_verification",
@@ -104,6 +124,7 @@ def check_installation(root: Path, *, clean_replay: bool) -> dict[str, Any]:
         "setup_scripts": scripts,
         "checks": checks,
         "clean_replay": clean_replay,
+        "test_suite": test_result,
         "passed": all(checks.values()),
         "notes": [
             "This artifact verifies the isolated Python/setup replay, not model RAM admission.",
@@ -116,9 +137,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Record Stage 7.11 installation checks.")
     parser.add_argument("--output", required=True)
     parser.add_argument("--clean-replay", action="store_true")
+    parser.add_argument("--run-tests", action="store_true")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[1]
-    result = check_installation(root, clean_replay=args.clean_replay)
+    result = check_installation(root, clean_replay=args.clean_replay, run_tests=args.run_tests)
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
