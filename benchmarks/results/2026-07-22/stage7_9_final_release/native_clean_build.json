@@ -22,58 +22,78 @@
     "python": "3.12.11",
     "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
     "logical_cpus": 20,
-    "memory_total_bytes": 135066402816,
+    "memory_total_bytes": 135066394624,
     "threads": 10,
     "omp_num_threads": "10",
     "mkl_num_threads": "10",
     "filesystem": "/"
   },
   "provenance": {
-    "source_tree_clean_at_experiment_start": true,
+    "source_tree_clean_at_experiment_start": false,
     "result_directory_writes_expected": true,
     "raw_results_directory": "/root/workspace/cache/final_release_raw",
-    "physical_read_bytes_policy": "not independently sampled by the public-alpha run command"
+    "physical_read_bytes_policy": "sampled via /proc/<pid>/io for model-cold; provider logical reads retained separately for all cells"
   },
   "kind": "sparseflow_stage7_9_native_clean_build",
-  "cache": "/root/workspace/cache/release-native",
+  "evidence_file": "/root/workspace/cache/final_release_raw/native_build_evidence.json",
+  "cache": "/root/workspace/cache/closure-native-20260723-c886",
   "compiled_from_empty_cache": true,
-  "build_command": "sparseflow doctor ... --check-native",
+  "build_command": [
+    "/usr/local/miniconda3/envs/py312/bin/python3.12",
+    "-m",
+    "sparseflow",
+    "doctor",
+    "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+    "--preset",
+    "low-memory",
+    "--int8-container",
+    "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+    "--check-native",
+    "--json"
+  ],
   "status": "pass",
   "artifacts": [
     {
-      "name": ".ninja_deps",
+      "path": ".ninja_deps",
       "bytes": 320,
-      "sha256": "1a50ef246bdda897f25b2155356ce75dda735204493cdaf863e2a9d67367f6ca"
+      "sha256": "d790d9fea0b6699f816b1eb1d5151332ed375f67aaaa4db3655769b189b5b7cb"
     },
     {
-      "name": ".ninja_log",
-      "bytes": 262,
-      "sha256": "aa6cee3e4f00b9e709cbb5d9ecb87c0c5487a6d05d1c152adc044b262392e06f"
+      "path": ".ninja_log",
+      "bytes": 264,
+      "sha256": "42cdda7efd8247acb413bbd3a9a557d1a5511ef8adba84025688bf2c365e0bb9"
     },
     {
-      "name": "build.ninja",
-      "bytes": 1210,
-      "sha256": "bc890ec8ffb90e5ffccef4baae983db79166835fd567c9a904d662537fd9f40f"
+      "path": "build.ninja",
+      "bytes": 1186,
+      "sha256": "4190b0b0ffe654a695a82c98b6799e1824bec6327aaf820251b00aef97411086"
     },
     {
-      "name": "grouped_moe.o",
-      "bytes": 196752,
-      "sha256": "19722a91be8ae3bca6ccdd156415d35d16f1be7b363d6babbb8477f5a1435f5d"
+      "path": "grouped_moe.o",
+      "bytes": 202168,
+      "sha256": "ad9b407840b903efd101851b363bbb673a475d4a5dda8e9ef59b963b7bda083a"
     },
     {
-      "name": "int8_vnni.o",
-      "bytes": 185880,
-      "sha256": "6392330c7c7a36d9ffccd8f60891b8d9e953882a81cfc714b63e11ebb445871a"
+      "path": "int8_vnni.o",
+      "bytes": 183528,
+      "sha256": "3987e44bceacc07e893551e3bc97476b64105994e51dc9524af7f8eb56e388c5"
     },
     {
-      "name": "moe_dispatch.o",
-      "bytes": 203816,
-      "sha256": "1f3df581ccedfbc97d0f94d825d38f4db3ca2ba41a31f01cfc78dda07592eeb7"
+      "path": "moe_dispatch.o",
+      "bytes": 215880,
+      "sha256": "0668708ce86a62e935a773d7fef799b0e993a013da43c689c6d7284cb4051aa0"
     },
     {
-      "name": "sparseflow_int8_vnni.so",
-      "bytes": 236560,
-      "sha256": "2b68ed2ad846192e46c1fcb46c533a01b79bd145551b1c4c336b78fa3703161d"
+      "path": "sparseflow_int8_vnni.so",
+      "bytes": 263072,
+      "sha256": "2a70ae08690b8382e2fd1945e1cdb665208da158d6339c9eca03c542fccc7940"
     }
-  ]
+  ],
+  "gates": {
+    "cache_empty_before": true,
+    "returncode_success": true,
+    "native_shared_object_present": true,
+    "cache_populated_after": true,
+    "no_traceback": true
+  }
 }

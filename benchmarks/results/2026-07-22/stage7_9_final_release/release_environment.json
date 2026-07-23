@@ -22,17 +22,17 @@
     "python": "3.12.11",
     "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
     "logical_cpus": 20,
-    "memory_total_bytes": 135066402816,
+    "memory_total_bytes": 135066394624,
     "threads": 10,
     "omp_num_threads": "10",
     "mkl_num_threads": "10",
     "filesystem": "/"
   },
   "provenance": {
-    "source_tree_clean_at_experiment_start": true,
+    "source_tree_clean_at_experiment_start": false,
     "result_directory_writes_expected": true,
     "raw_results_directory": "/root/workspace/cache/final_release_raw",
-    "physical_read_bytes_policy": "not independently sampled by the public-alpha run command"
+    "physical_read_bytes_policy": "sampled via /proc/<pid>/io for model-cold; provider logical reads retained separately for all cells"
   },
   "kind": "sparseflow_stage7_9_release_environment",
   "environment": {
@@ -47,6 +47,6 @@
     "native_cache_was_empty_before_build": true,
     "native_extension_built": true,
     "preset_doctor_inspect_plan_run_exercised": true,
-    "source_tree_clean_at_run": true
+    "source_tree_clean_at_run": false
   }
 }

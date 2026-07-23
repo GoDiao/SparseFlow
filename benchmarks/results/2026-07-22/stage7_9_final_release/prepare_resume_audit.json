@@ -22,17 +22,17 @@
     "python": "3.12.11",
     "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
     "logical_cpus": 20,
-    "memory_total_bytes": 135066402816,
+    "memory_total_bytes": 135066394624,
     "threads": 10,
     "omp_num_threads": "10",
     "mkl_num_threads": "10",
     "filesystem": "/"
   },
   "provenance": {
-    "source_tree_clean_at_experiment_start": true,
+    "source_tree_clean_at_experiment_start": false,
     "result_directory_writes_expected": true,
     "raw_results_directory": "/root/workspace/cache/final_release_raw",
-    "physical_read_bytes_policy": "not independently sampled by the public-alpha run command"
+    "physical_read_bytes_policy": "sampled via /proc/<pid>/io for model-cold; provider logical reads retained separately for all cells"
   },
   "kind": "sparseflow_stage7_9_prepare_resume_audit",
   "first": {
@@ -50,10 +50,16 @@
     "resume_skipped_completed_layer": true,
     "weight_manifest_unchanged": true,
     "execution_manifest_unchanged": true,
-    "layer_hash_and_mtime_unchanged": true,
-    "no_temp_files_left": true,
-    "disk_preflight_pass": true
+    "first_returncode_zero": true,
+    "resume_returncode_zero": true,
+    "first_converted_one_layer": true,
+    "resume_converted_zero": true,
+    "resume_detected_one_layer": true,
+    "completed_layer_hash_and_mtime_unchanged": true,
+    "disk_preflight_pass": true,
+    "no_temporary_files": true
   },
+  "evidence_file": "/root/workspace/cache/final_release_raw/prepare_resume_evidence.json",
   "source_first": "/root/workspace/cache/final_release_raw/prepare_first.json",
   "source_resume": "/root/workspace/cache/final_release_raw/prepare_resume.json"
 }

@@ -22,29 +22,142 @@
     "python": "3.12.11",
     "cpu_model": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
     "logical_cpus": 20,
-    "memory_total_bytes": 135066402816,
+    "memory_total_bytes": 135066394624,
     "threads": 10,
     "omp_num_threads": "10",
     "mkl_num_threads": "10",
     "filesystem": "/"
   },
   "provenance": {
-    "source_tree_clean_at_experiment_start": true,
+    "source_tree_clean_at_experiment_start": false,
     "result_directory_writes_expected": true,
     "raw_results_directory": "/root/workspace/cache/final_release_raw",
-    "physical_read_bytes_policy": "not independently sampled by the public-alpha run command"
+    "physical_read_bytes_policy": "sampled via /proc/<pid>/io for model-cold; provider logical reads retained separately for all cells"
   },
   "kind": "sparseflow_stage7_9_release_cli_smoke",
-  "base_environment": "/root/workspace/cache/final-base-venv-20260722",
+  "evidence_file": "/root/workspace/cache/final_release_raw/cli_smoke_evidence.json",
+  "base_environment": {
+    "python": "/root/workspace/cache/final-base-venv-20260722/bin/python",
+    "torch_visible": false,
+    "install": "uv pip install -e . --no-deps"
+  },
   "torch_visible": false,
   "commands": {
-    "preset": true,
-    "inspect": true,
-    "plan": true,
-    "doctor_low_memory": true,
-    "run_clean_optional_dependency_error": true,
-    "run_exit_code": 2,
-    "run_traceback": false
+    "preset": {
+      "command": [
+        "/root/workspace/cache/final-base-venv-20260722/bin/python",
+        "-m",
+        "sparseflow",
+        "preset",
+        "--json"
+      ],
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed_seconds": 0.1337428260001161,
+      "stdout_sha256": "9bbf3c9ae908b73f3c4d1564b918a2f0e3df333a5ba88fe77cccd6ee75d26148",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 1446,
+      "stderr_bytes": 0,
+      "traceback": false,
+      "stdout_tail": "atch_mode\": \"single\",\n      \"public_status\": \"stable-low-memory\"\n    },\n    {\n      \"name\": \"stable\",\n      \"description\": \"INT8 native resident Qwen3.6 hybrid runtime.\",\n      \"mode\": \"resident\",\n      \"load_mode\": \"memory-native\",\n      \"expert_storage\": \"int8-native\",\n      \"native_dispatch\": \"hybrid\",\n      \"cache_policy\": \"none\",\n      \"cache_bytes\": null,\n      \"prefetch_workers\": 0,\n      \"prefetch_policy\": \"none\",\n      \"batch_mode\": \"single\",\n      \"public_status\": \"stable\"\n    }\n  ]\n}\n",
+      "stderr_tail": ""
+    },
+    "inspect": {
+      "command": [
+        "/root/workspace/cache/final-base-venv-20260722/bin/python",
+        "-m",
+        "sparseflow",
+        "inspect",
+        "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+        "--json"
+      ],
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed_seconds": 0.1372547209998629,
+      "stdout_sha256": "4c5a7f30200159b777229df113c9aab74ca37c5721b356c316f9f340e223ef4e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 5591,
+      "stderr_bytes": 0,
+      "traceback": false,
+      "stdout_tail": "1073741824\n      },\n      \"35\": {\n        \"down_proj\": 536870912,\n        \"gate_up_proj\": 1073741824\n      },\n      \"36\": {\n        \"down_proj\": 536870912,\n        \"gate_up_proj\": 1073741824\n      },\n      \"37\": {\n        \"down_proj\": 536870912,\n        \"gate_up_proj\": 1073741824\n      },\n      \"38\": {\n        \"down_proj\": 536870912,\n        \"gate_up_proj\": 1073741824\n      },\n      \"39\": {\n        \"gate_up_proj\": 1073741824,\n        \"down_proj\": 536870912\n      }\n    },\n    \"fused\": true\n  }\n}\n",
+      "stderr_tail": ""
+    },
+    "plan": {
+      "command": [
+        "/root/workspace/cache/final-base-venv-20260722/bin/python",
+        "-m",
+        "sparseflow",
+        "plan",
+        "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+        "--ram",
+        "96",
+        "--ctx",
+        "4096",
+        "--json"
+      ],
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed_seconds": 0.13765809500000614,
+      "stdout_sha256": "1861362f770b161d74dac9e66703550e937807baa67ea28551ffe8b18265da4b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 2704,
+      "stderr_bytes": 0,
+      "traceback": false,
+      "stdout_tail": "28\": 1610612736,\n      \"29\": 1610612736,\n      \"30\": 1610612736,\n      \"31\": 1610612736,\n      \"32\": 1610612736,\n      \"33\": 1610612736,\n      \"34\": 1610612736,\n      \"35\": 1610612736,\n      \"36\": 1610612736,\n      \"37\": 1610612736,\n      \"38\": 1610612736,\n      \"39\": 1610612736\n    },\n    \"typical_layer_total_expert_bytes\": 1610612736,\n    \"typical_expert_bytes\": 6291456,\n    \"per_layer_cache_slot_set_bytes\": 251658240,\n    \"cold_expert_read_per_token_bytes\": 2013265920\n  },\n  \"warnings\": []\n}\n",
+      "stderr_tail": ""
+    },
+    "doctor_low_memory": {
+      "command": [
+        "/root/workspace/cache/final-base-venv-20260722/bin/python",
+        "-m",
+        "sparseflow",
+        "doctor",
+        "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+        "--preset",
+        "low-memory",
+        "--int8-container",
+        "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+        "--json"
+      ],
+      "returncode": 0,
+      "timed_out": false,
+      "elapsed_seconds": 0.8038121000001865,
+      "stdout_sha256": "d3af828a111615053ac8a678a3ce9fc7826a6cceab4430c241902493c2f559e9",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stdout_bytes": 12804,
+      "stderr_bytes": 0,
+      "traceback": false,
+      "stdout_tail": "},\n        \"headroom_bytes\": 94433528576,\n        \"status\": \"pass\"\n      }\n    },\n    {\n      \"id\": \"native_extension\",\n      \"status\": \"skip\",\n      \"detail\": \"not compiled; pass --check-native on an AVX-512 VNNI host\"\n    }\n  ],\n  \"errors\": 0,\n  \"warnings\": 0,\n  \"ready\": true,\n  \"native_extension\": null,\n  \"notes\": [\n    \"shared streaming batching is disabled by policy\",\n    \"pure fused decode is diagnostics-only\",\n    \"model payload hash is size-only unless --full-payload-hash is used\"\n  ]\n}\n",
+      "stderr_tail": ""
+    },
+    "run_clean_optional_dependency_error": {
+      "command": [
+        "/root/workspace/cache/final-base-venv-20260722/bin/python",
+        "-m",
+        "sparseflow",
+        "run",
+        "/root/workspace/SparceFlow/model/Qwen3.6-35B-A3B",
+        "--preset",
+        "low-memory",
+        "--int8-container",
+        "/root/workspace/SparceFlow/.cache/stage7_5/qwen36-int8",
+        "--prompt",
+        "test",
+        "--max-new-tokens",
+        "1",
+        "--json"
+      ],
+      "returncode": 2,
+      "timed_out": false,
+      "elapsed_seconds": 0.12523354999984804,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "469266d1d7b908e77dbca8708407c155a6488ea0f2f4a3b9f68eba3415646434",
+      "stdout_bytes": 0,
+      "stderr_bytes": 162,
+      "traceback": false,
+      "stdout_tail": "",
+      "stderr_tail": "sparseflow: error: run requires the optional runtime dependencies (torch, transformers, safetensors, accelerate); install them with `pip install -e '.[runtime]'`\n"
+    }
   },
   "runtime_environment_commands": [
     "preset stable",
@@ -55,5 +168,13 @@
     "run low-memory",
     "run experimental-batch"
   ],
+  "gates": {
+    "preset": true,
+    "inspect": true,
+    "plan": true,
+    "doctor_low_memory": true,
+    "run_optional_error": true,
+    "torch_hidden": true
+  },
   "status": "pass"
 }
