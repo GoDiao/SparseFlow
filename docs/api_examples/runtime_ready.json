@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "state": "ready",
+  "model_id": "qwen3.6-35b-a3b-sparseflow",
+  "preset": "laptop-16gb",
+  "public_status": "experimental-laptop",
+  "effective_config": {
+    "cache_bytes": 268435456,
+    "context_tokens": 2048,
+    "max_completion_tokens": 128
+  },
+  "runtime_load_count": 1,
+  "runtime_load_seconds": 7.17,
+  "runtime_identity": {"runtime_id": "qwen36-text-int8-native-v1"},
+  "model": {"metadata_sha256": "75c3ff47bb3f96eee08facdf700ccec7da9a0b37e8c1d4003e251eb05542d735"},
+  "container": {
+    "metadata_sha256": "d5a3a9a63a6d4ed3a64b9581c7067fe32227eaef3798f889235c9ec9ef0976eb",
+    "weight_bytes": 32296304640,
+    "execution_bytes": 125992960
+  },
+  "process_memory": {
+    "rss_bytes": 6653952000,
+    "peak_rss_bytes": 6653952000,
+    "private_bytes": 8912896000
+  },
+  "last_generation": null,
+  "evidence": "SIMULATED"
+}

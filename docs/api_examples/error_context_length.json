@@ -1,0 +1,9 @@
+{
+  "error": {
+    "message": "prompt tokens plus max completion tokens exceed the configured context (2040 + 128 > 2048)",
+    "type": "invalid_request_error",
+    "param": "max_completion_tokens",
+    "code": "context_length_exceeded"
+  },
+  "evidence": "SIMULATED"
+}

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import threading
 
 
@@ -28,6 +30,7 @@ def load_native_int8() -> None:
         if _LOADED:
             return
         _require_avx512_vnni()
+        _ensure_windows_msvc_environment()
         import torch
         from torch.utils.cpp_extension import load
 
@@ -48,15 +51,7 @@ def load_native_int8() -> None:
                 str(root / "native" / "moe_dispatch.cpp"),
                 str(grouped_source),
             ],
-            extra_cflags=[
-                "-O3",
-                "-std=c++17",
-                "-mavx512f",
-                "-mavx512bw",
-                "-mavx512dq",
-                "-mavx512vl",
-                "-mavx512vnni",
-            ],
+            extra_cflags=_native_cflags(),
             build_directory=str(build),
             is_python_module=False,
             verbose=False,
@@ -167,9 +162,81 @@ def reference_dynamic_linear(input_tensor, weight, scales, row_sums, torch):
 
 
 def _require_avx512_vnni() -> None:
-    cpuinfo = Path("/proc/cpuinfo")
-    if cpuinfo.is_file() and "avx512_vnni" not in cpuinfo.read_text(encoding="utf-8"):
+    from .release import cpu_features
+
+    if not cpu_features()["avx512_vnni"]:
         raise RuntimeError("SparseFlow native INT8 kernel requires AVX-512 VNNI")
+
+
+def _native_cflags(platform_name: str | None = None) -> list[str]:
+    platform_name = os.name if platform_name is None else platform_name
+    if platform_name == "nt":
+        return ["/O2", "/std:c++17", "/arch:AVX512"]
+    return [
+        "-O3",
+        "-std=c++17",
+        "-mavx512f",
+        "-mavx512bw",
+        "-mavx512dq",
+        "-mavx512vl",
+        "-mavx512vnni",
+    ]
+
+
+def _ensure_windows_msvc_environment() -> None:
+    if os.name != "nt" or shutil.which("cl"):
+        return
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    candidates = (
+        Path(program_files_x86) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe",
+        Path(r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"),
+    )
+    vswhere = next((path for path in candidates if path.is_file()), None)
+    if vswhere is None:
+        raise RuntimeError(
+            "MSVC was not found. Install Visual Studio 2022 Build Tools with the Desktop development with C++ workload."
+        )
+    query = subprocess.run(
+        [
+            str(vswhere),
+            "-latest",
+            "-products",
+            "*",
+            "-requires",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property",
+            "installationPath",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    installation = query.stdout.strip()
+    vcvars = Path(installation) / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
+    if query.returncode != 0 or not vcvars.is_file():
+        raise RuntimeError(
+            "Visual Studio 2022 Build Tools is installed without the x64 C++ toolchain."
+        )
+    environment = subprocess.run(
+        f'call "{vcvars}" >nul && set',
+        shell=True,
+        executable=os.environ.get("COMSPEC", "cmd.exe"),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if environment.returncode != 0:
+        raise RuntimeError(f"failed to initialize the MSVC environment: {environment.stderr.strip()}")
+    for line in environment.stdout.splitlines():
+        if "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        os.environ[name] = value
+    os.environ.setdefault("DISTUTILS_USE_SDK", "1")
+    os.environ.setdefault("MSSdk", "1")
+    os.environ.setdefault("VSLANG", "1033")
+    if not shutil.which("cl"):
+        raise RuntimeError("MSVC environment initialized but cl.exe is still unavailable")
 
 
 # [Main Dev]

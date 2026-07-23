@@ -342,7 +342,10 @@ def convert_experts_int8(
         "schema_version": 1,
         "format_id": FORMAT_ID,
         "format_version": FORMAT_VERSION,
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": _manifest_created_utc(
+            output / "manifest.json",
+            preserve=resume and converted_layers == 0,
+        ),
         "source": source,
         "quantization": {
             "weights": "per-output-channel symmetric int8",
@@ -449,7 +452,10 @@ def build_int8_execution_metadata(
         "schema_version": 1,
         "format_id": EXEC_FORMAT_ID,
         "format_version": EXEC_FORMAT_VERSION,
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": _manifest_created_utc(
+            root / EXEC_MANIFEST_NAME,
+            preserve=resume and converted_layers == 0,
+        ),
         "weight_format_id": index.manifest["format_id"],
         "weight_index_sha256": index.manifest["index_sha256"],
         "features": ["offline-row-sums"],
@@ -686,6 +692,17 @@ def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:
     temp = path.with_suffix(path.suffix + ".tmp")
     temp.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     temp.replace(path)
+
+
+def _manifest_created_utc(path: Path, *, preserve: bool) -> str:
+    if preserve and path.is_file():
+        try:
+            value = json.loads(path.read_text(encoding="utf-8")).get("created_utc")
+        except (OSError, ValueError, TypeError):
+            value = None
+        if isinstance(value, str) and value:
+            return value
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _sha256_file(path: Path) -> str:

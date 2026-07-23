@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import platform
-import resource
 import shutil
 import subprocess
 import time
 from pathlib import Path
 from typing import Any, Iterable
+
+from sparseflow.process_metrics import host_snapshot, process_snapshot
 
 
 def now() -> float:
@@ -33,30 +33,19 @@ def read_proc_file(path: str) -> dict[str, int]:
     return result
 
 
-def process_snapshot() -> dict[str, int]:
-    status = read_proc_file("/proc/self/status")
-    io = read_proc_file("/proc/self/io")
-    usage = resource.getrusage(resource.RUSAGE_SELF)
-    return {
-        "rss_bytes": status.get("VmRSS", 0) * 1024,
-        "peak_rss_bytes": status.get("VmHWM", 0) * 1024,
-        "read_bytes": io.get("read_bytes", 0),
-        "read_chars": io.get("rchar", 0),
-        "read_syscalls": io.get("syscr", 0),
-        "user_seconds": usage.ru_utime,
-        "system_seconds": usage.ru_stime,
-        "minor_page_faults": int(usage.ru_minflt),
-        "major_page_faults": int(usage.ru_majflt),
-        "voluntary_context_switches": int(usage.ru_nvcsw),
-        "involuntary_context_switches": int(usage.ru_nivcsw),
-    }
-
-
-def delta(before: dict[str, int], after: dict[str, int]) -> dict[str, int | float]:
-    result: dict[str, int | float] = {}
+def delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
     for key, value in after.items():
         old = before.get(key, 0)
-        result[key] = value - old
+        if (
+            not isinstance(value, bool)
+            and not isinstance(old, bool)
+            and isinstance(value, (int, float))
+            and isinstance(old, (int, float))
+        ):
+            result[key] = value - old
+        else:
+            result[key] = value
     return result
 
 
@@ -102,28 +91,6 @@ def model_snapshot(model_dir: str | Path) -> dict[str, Any]:
         "config_sha256": sha256_file(config) if config.is_file() else None,
         "index_sha256": sha256_file(index) if index.is_file() else None,
         "config": json.loads(config.read_text(encoding="utf-8")) if config.is_file() else None,
-    }
-
-
-def host_snapshot() -> dict[str, Any]:
-    memory = read_proc_file("/proc/meminfo")
-    cpu_model = None
-    try:
-        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
-            if line.startswith("model name"):
-                cpu_model = line.partition(":")[2].strip()
-                break
-    except OSError:
-        pass
-    return {
-        "platform": platform.platform(),
-        "python": platform.python_version(),
-        "cpu_count": os.cpu_count(),
-        "cpu_model": cpu_model,
-        "memory_total_bytes": memory.get("MemTotal", 0) * 1024,
-        "memory_available_bytes": memory.get("MemAvailable", 0) * 1024,
-        "numa_nodes": _read_text("/sys/devices/system/node/online"),
-        "pid": os.getpid(),
     }
 
 

@@ -7,6 +7,7 @@ import time
 from typing import Any, Callable, Literal
 
 from .analyze import load_config
+from .process_metrics import current_rss_bytes, peak_rss_bytes, process_snapshot
 from .safetensors import ShardIndex, TensorSpan
 
 
@@ -132,6 +133,8 @@ class MaterializedTextModel:
     rss_before_materialize: int
     rss_after_materialize: int
     process_peak_rss_at_materialize_end: int
+    private_bytes_before_materialize: int
+    private_bytes_after_materialize: int
 
     def as_dict(self) -> dict[str, Any]:
         remaining_meta_parameters = tuple(
@@ -166,6 +169,8 @@ class MaterializedTextModel:
             "process_peak_rss_at_materialize_end": (
                 self.process_peak_rss_at_materialize_end
             ),
+            "private_bytes_before_materialize": self.private_bytes_before_materialize,
+            "private_bytes_after_materialize": self.private_bytes_after_materialize,
         }
 
 
@@ -231,7 +236,7 @@ def materialize_meta_text_model(
     source_bytes = 0
     materialized_bytes = 0
     started = time.perf_counter()
-    rss_before = current_rss_bytes()
+    process_before = process_snapshot()
     for shard, entries in sorted(resident_by_shard.items(), key=lambda item: str(item[0])):
         with safe_open(str(shard), framework="pt", device="cpu") as handle:
             available = set(handle.keys())
@@ -271,6 +276,7 @@ def materialize_meta_text_model(
     }
     if set(loaded_sources) != expected_sources or set(loaded_targets) != expected_targets:
         raise ValueError("selective loader did not materialize the complete resident plan")
+    process_after = process_snapshot()
     return MaterializedTextModel(
         model=build.model,
         plan=build.plan,
@@ -279,9 +285,11 @@ def materialize_meta_text_model(
         source_payload_bytes_read=source_bytes,
         materialized_bytes=materialized_bytes,
         load_seconds=time.perf_counter() - started,
-        rss_before_materialize=rss_before,
-        rss_after_materialize=current_rss_bytes(),
-        process_peak_rss_at_materialize_end=peak_rss_bytes(),
+        rss_before_materialize=int(process_before["rss_bytes"]),
+        rss_after_materialize=int(process_after["rss_bytes"]),
+        process_peak_rss_at_materialize_end=int(process_after["peak_rss_bytes"]),
+        private_bytes_before_materialize=int(process_before["private_bytes"]),
+        private_bytes_after_materialize=int(process_after["private_bytes"]),
     )
 
 
@@ -315,27 +323,6 @@ def _audit_materialized_model(materialized: MaterializedTextModel) -> None:
         )
     if materialized.source_payload_bytes_read != materialized.plan.bytes_for("resident"):
         raise ValueError("resident source-byte count does not match memory load plan")
-
-
-def current_rss_bytes() -> int:
-    status = Path("/proc/self/status")
-    if status.is_file():
-        for line in status.read_text(encoding="utf-8").splitlines():
-            if line.startswith("VmRSS:"):
-                return int(line.split()[1]) * 1024
-    return peak_rss_bytes()
-
-
-def peak_rss_bytes() -> int:
-    try:
-        import resource
-        import sys
-
-        value = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        # Linux reports KiB; macOS reports bytes.
-        return value if sys.platform == "darwin" else value * 1024
-    except (ImportError, ValueError):
-        return 0
 
 
 def prepare_qwen36_meta_text_model(

@@ -1,0 +1,3 @@
+{"id":"zh-explain","category":"zh","messages":[{"role":"user","content":"用简洁的中文解释稀疏专家路由的作用。"}]}
+{"id":"en-explain","category":"en","messages":[{"role":"user","content":"Explain sparse expert routing and why it reduces active computation."}]}
+{"id":"code-python","category":"code","messages":[{"role":"user","content":"Write a Python function that returns the top-k indices from a list of scores."}]}

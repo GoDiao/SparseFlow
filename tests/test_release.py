@@ -16,6 +16,7 @@ from sparseflow.release import (
     PRESETS,
     apply_preset,
     container_identity,
+    cpu_features,
     doctor,
     evaluate_memory_admission,
     memory_snapshot,
@@ -63,6 +64,15 @@ def write_model(root: Path) -> Path:
 
 
 class ReleaseTest(unittest.TestCase):
+    def test_cpu_features_accepts_windows_vnni_spelling(self):
+        result = cpu_features(
+            proc_cpuinfo_path="missing-cpuinfo",
+            cpuinfo_provider=lambda: {"flags": ["avx512f", "avx512vnni"]},
+        )
+        self.assertTrue(result["avx512f"])
+        self.assertTrue(result["avx512_vnni"])
+        self.assertEqual(result["flags_source"], "py-cpuinfo")
+
     def test_public_presets_freeze_paths(self):
         stable = apply_preset("stable")
         low_memory = apply_preset("low-memory")
@@ -98,7 +108,19 @@ class ReleaseTest(unittest.TestCase):
             (container / "index.json").write_text("{}", encoding="utf-8")
             self.assertEqual(container_identity(container)["metadata_files"], ["index.json", "manifest.json"])
             self.assertEqual(main(["preset", "stable"]), 0)
-            self.assertEqual(set(PRESETS), {"stable", "low-memory", "experimental-batch"})
+            self.assertEqual(
+                set(PRESETS),
+                {"stable", "low-memory", "experimental-batch", "laptop-16gb"},
+            )
+
+    def test_laptop_preset_is_explicitly_experimental_and_bounded(self):
+        laptop = apply_preset("laptop-16gb")
+        self.assertEqual(laptop["mode"], "streaming")
+        self.assertEqual(laptop["cache_bytes"], 256 * 1024**2)
+        self.assertEqual(laptop["default_context_tokens"], 2048)
+        self.assertEqual(laptop["default_max_completion_tokens"], 128)
+        self.assertEqual(laptop["public_status"], "experimental-laptop")
+        self.assertFalse(laptop["prefetch_enabled"])
 
     def test_memory_admission_preset_budgets_and_cache_override(self):
         analysis = {
@@ -153,6 +175,20 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(low_8["components"]["streaming_cache_bytes"], 8 * GIB)
         self.assertGreater(
             low_8["required_ram_bytes"], low_16["required_ram_bytes"]
+        )
+
+        laptop = evaluate_memory_admission(
+            analysis,
+            preset="laptop-16gb",
+            effective_config=apply_preset("laptop-16gb"),
+            container=container,
+            available_ram_bytes=16 * GIB,
+            ctx=2048,
+        )
+        self.assertEqual(laptop["components"]["resident_int8_expert_bytes"], 0)
+        self.assertEqual(
+            laptop["components"]["streaming_cache_bytes"],
+            256 * 1024**2,
         )
 
         batch_one = evaluate_memory_admission(
@@ -221,9 +257,18 @@ class ReleaseTest(unittest.TestCase):
             missing = memory_snapshot(
                 proc_meminfo_path=root / "missing-meminfo",
                 cgroup_root=root / "missing-cgroup",
+                windows_memory_provider=lambda: 0,
             )
             self.assertEqual(missing["source"], "unknown")
             self.assertEqual(missing["available_ram_bytes"], 0)
+
+            windows = memory_snapshot(
+                proc_meminfo_path=root / "missing-meminfo",
+                cgroup_root=root / "missing-cgroup",
+                windows_memory_provider=lambda: 6 * GIB,
+            )
+            self.assertEqual(windows["source"], "windows-global-memory-status")
+            self.assertEqual(windows["available_ram_bytes"], 6 * GIB)
 
     def test_base_cli_subprocess_has_no_runtime_import_dependency(self):
         with tempfile.TemporaryDirectory() as temp:

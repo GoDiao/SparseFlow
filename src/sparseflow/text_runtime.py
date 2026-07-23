@@ -6,7 +6,7 @@ import time
 import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .cache import ExpertCache
 from .cache_policy import POLICY_VARIANTS, make_cache_policy
@@ -21,12 +21,12 @@ from .loader import ShardReader
 from .locator import ExpertLocator
 from .memory_loader import (
     build_qwen36_meta_text_model,
-    current_rss_bytes,
     materialize_qwen36_text_model,
-    peak_rss_bytes,
 )
 from .moe_probe import run_routed_experts
+from .process_metrics import process_snapshot
 from .telemetry import RuntimeTelemetry
+from .serving_types import ContextLengthExceeded, GenerationCancelled
 
 
 RUNTIME_ID = "qwen36-text-memory-native-v1"
@@ -43,6 +43,46 @@ INT8_NATIVE_KERNEL_ID = "int8-w8a8-avx512-vnni-linear-silu-linear-v1"
 def _provider_counters(provider: ExpertProvider) -> dict[str, Any]:
     counters = getattr(provider, "counters", None)
     return counters() if counters is not None else provider.snapshot()
+
+
+class _TextDeltaEmitter:
+    """Decode the accumulated token prefix so Unicode and leading spaces survive."""
+
+    def __init__(self, tokenizer, callback):
+        self.tokenizer = tokenizer
+        self.callback = callback
+        self.token_ids: list[int] = []
+        self.emitted = ""
+
+    def put(self, token) -> None:
+        self.token_ids.append(int(token[0, 0].item()))
+        decoded = self.tokenizer.decode(
+            self.token_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+        if decoded.startswith(self.emitted):
+            delta = decoded[len(self.emitted) :]
+            self.emitted = decoded
+        else:
+            common = 0
+            for left, right in zip(self.emitted, decoded):
+                if left != right:
+                    break
+                common += 1
+            delta = decoded[common:]
+            self.emitted = decoded
+        if delta:
+            self.callback(delta)
+
+    def end(self, final_text: str) -> None:
+        if final_text.startswith(self.emitted):
+            delta = final_text[len(self.emitted) :]
+            if delta:
+                self.callback(delta)
+        elif final_text != self.emitted:
+            self.callback(final_text)
+        self.emitted = final_text
 
 
 try:
@@ -752,10 +792,26 @@ class Qwen36TextRuntime:
         return next(self.model.parameters()).dtype
 
     def encode_chat(self, prompt: str) -> dict[str, Any]:
-        if not prompt.strip():
-            raise ValueError("prompt must not be empty")
+        return self.encode_messages([{"role": "user", "content": prompt}])
+
+    def encode_messages(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+        if not isinstance(messages, list) or not messages:
+            raise ValueError("messages must be a non-empty list")
+        normalized = []
+        for message in messages:
+            if not isinstance(message, dict):
+                raise ValueError("each message must be a mapping")
+            role = message.get("role")
+            content = message.get("content")
+            if role == "developer":
+                role = "system"
+            if role not in {"system", "user", "assistant"}:
+                raise ValueError("unsupported message role")
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("message content must not be empty")
+            normalized.append({"role": role, "content": content})
         encoded = self.tokenizer.apply_chat_template(
-            [{"role": "user", "content": prompt}],
+            normalized,
             tokenize=True,
             add_generation_prompt=True,
             return_tensors="pt",
@@ -765,6 +821,18 @@ class Qwen36TextRuntime:
             key: value.to(self.device) if hasattr(value, "to") else value
             for key, value in encoded.items()
         }
+
+    def validate_context(
+        self,
+        messages: list[dict[str, str]],
+        max_new_tokens: int,
+        context_tokens: int,
+    ) -> int:
+        inputs = self.encode_messages(messages)
+        prompt_tokens = int(inputs["input_ids"].shape[-1])
+        if prompt_tokens + max_new_tokens > context_tokens:
+            raise ContextLengthExceeded(prompt_tokens, max_new_tokens, context_tokens)
+        return prompt_tokens
 
     def prefill(self, inputs: dict[str, Any]):
         """Run prompt prefill and return logits plus Transformers Cache."""
@@ -786,6 +854,36 @@ class Qwen36TextRuntime:
                 use_cache=True,
             )
 
+    def generate_messages(
+        self,
+        messages: list[dict[str, str]],
+        max_new_tokens: int = 8,
+        stop_on_eos: bool = True,
+        context_tokens: int | None = None,
+        on_text_delta=None,
+        is_cancelled=None,
+        record_logit_fingerprints: bool = False,
+        capture_logits: bool = False,
+    ) -> dict[str, Any]:
+        if not messages:
+            raise ValueError("messages must not be empty")
+        prompt = str(messages[-1].get("content", ""))
+        inputs = self.encode_messages(messages)
+        if context_tokens is not None:
+            prompt_tokens = int(inputs["input_ids"].shape[-1])
+            if prompt_tokens + max_new_tokens > context_tokens:
+                raise ContextLengthExceeded(prompt_tokens, max_new_tokens, context_tokens)
+        return self._greedy_generate_impl(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            stop_on_eos=stop_on_eos,
+            record_logit_fingerprints=record_logit_fingerprints,
+            capture_logits=capture_logits,
+            _inputs=inputs,
+            _on_text_delta=on_text_delta,
+            _is_cancelled=is_cancelled,
+        )
+
     def greedy_generate(
         self,
         prompt: str,
@@ -794,12 +892,85 @@ class Qwen36TextRuntime:
         record_logit_fingerprints: bool = False,
         capture_logits: bool = False,
     ) -> dict[str, Any]:
+        return self._greedy_generate_impl(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            stop_on_eos=stop_on_eos,
+            record_logit_fingerprints=record_logit_fingerprints,
+            capture_logits=capture_logits,
+        )
+
+    def _greedy_generate_impl(
+        self,
+        prompt: str,
+        max_new_tokens: int = 8,
+        stop_on_eos: bool = True,
+        record_logit_fingerprints: bool = False,
+        capture_logits: bool = False,
+        _inputs: dict[str, Any] | None = None,
+        _on_text_delta=None,
+        _is_cancelled=None,
+    ) -> dict[str, Any]:
+        failed = False
+        provider_finished = False
+
+        def finish_provider() -> None:
+            nonlocal provider_finished
+            if self.provider is None or provider_finished:
+                return
+            # Mark before calling so a provider exception cannot cause a second
+            # cleanup attempt from the outer finally block.
+            provider_finished = True
+            self.provider.finish_generation()
+
+        try:
+            return self._greedy_generate_core(
+                prompt,
+                max_new_tokens=max_new_tokens,
+                stop_on_eos=stop_on_eos,
+                record_logit_fingerprints=record_logit_fingerprints,
+                capture_logits=capture_logits,
+                _inputs=_inputs,
+                _on_text_delta=_on_text_delta,
+                _is_cancelled=_is_cancelled,
+                _finish_provider=finish_provider,
+            )
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            if not provider_finished:
+                try:
+                    finish_provider()
+                except BaseException:
+                    if not failed:
+                        raise
+
+    def _greedy_generate_core(
+        self,
+        prompt: str,
+        max_new_tokens: int = 8,
+        stop_on_eos: bool = True,
+        record_logit_fingerprints: bool = False,
+        capture_logits: bool = False,
+        _inputs: dict[str, Any] | None = None,
+        _on_text_delta=None,
+        _is_cancelled=None,
+        _finish_provider: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         if max_new_tokens < 1:
             raise ValueError("max_new_tokens must be positive")
-        inputs = self.encode_chat(prompt)
+        if self.telemetry is not None:
+            self.telemetry.reset()
+        if self.route_audit is not None:
+            self.route_audit.records.clear()
+        inputs = _inputs if _inputs is not None else self.encode_chat(prompt)
+        if _is_cancelled is not None and _is_cancelled():
+            raise GenerationCancelled("generation cancelled before prefill")
         input_ids = inputs["input_ids"]
         attention_mask = inputs.get("attention_mask", self.torch.ones_like(input_ids))
-        rss_before_prefill = current_rss_bytes()
+        process_before_prefill = process_snapshot()
+        rss_before_prefill = int(process_before_prefill["rss_bytes"])
         storage_before_prefill = (
             _provider_counters(self.provider) if self.provider is not None else None
         )
@@ -808,6 +979,8 @@ class Qwen36TextRuntime:
 
         prefill_started = time.perf_counter()
         first = self.prefill(inputs)
+        if _is_cancelled is not None and _is_cancelled():
+            raise GenerationCancelled("generation cancelled after prefill")
         model_forward_seconds = time.perf_counter() - prefill_started
         self.telemetry.add_timing("model_forward", model_forward_seconds * 1000.0)
         argmax_started = time.perf_counter()
@@ -820,6 +993,9 @@ class Qwen36TextRuntime:
             _provider_counters(self.provider) if self.provider is not None else None
         )
         generated = [next_token]
+        text_emitter = _TextDeltaEmitter(self.tokenizer, _on_text_delta) if _on_text_delta is not None else None
+        if text_emitter is not None:
+            text_emitter.put(next_token)
         logit_fingerprints = (
             [_logit_fingerprint(first.logits[:, -1, :], self.torch)]
             if record_logit_fingerprints
@@ -837,6 +1013,8 @@ class Qwen36TextRuntime:
         previous_decode_routes: dict[int, tuple[int, ...]] = {}
 
         for forward_index in range(1, max_new_tokens):
+            if _is_cancelled is not None and _is_cancelled():
+                raise GenerationCancelled("generation cancelled")
             attention_mask = self.torch.cat(
                 [attention_mask, self.torch.ones_like(next_token)],
                 dim=-1,
@@ -853,6 +1031,8 @@ class Qwen36TextRuntime:
             )
             started = time.perf_counter()
             output = self.decode(next_token, attention_mask, past)
+            if _is_cancelled is not None and _is_cancelled():
+                raise GenerationCancelled("generation cancelled after decode")
             model_forward_seconds = time.perf_counter() - started
             self.telemetry.add_timing("model_forward", model_forward_seconds * 1000.0)
             decode_durations.append(model_forward_seconds)
@@ -865,6 +1045,8 @@ class Qwen36TextRuntime:
                 "argmax", (time.perf_counter() - argmax_started) * 1000.0
             )
             generated.append(next_token)
+            if text_emitter is not None:
+                text_emitter.put(next_token)
             if logit_fingerprints is not None:
                 logit_fingerprints.append(
                     _logit_fingerprint(output.logits[:, -1, :], self.torch)
@@ -892,10 +1074,13 @@ class Qwen36TextRuntime:
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )
+        if text_emitter is not None:
+            text_emitter.end(text)
         finalize_started = time.perf_counter()
-        if self.provider is not None:
-            self.provider.finish_generation()
+        if _finish_provider is not None:
+            _finish_provider()
         prefetch_finalize_seconds = time.perf_counter() - finalize_started
+        process_after_generation = process_snapshot()
         storage_after_generation = (
             _provider_counters(self.provider) if self.provider is not None else None
         )
@@ -934,6 +1119,7 @@ class Qwen36TextRuntime:
             "generated_ids": generated_ids[0].tolist(),
             "generated_tokens": int(generated_ids.shape[-1]),
             "text": text,
+            "finish_reason": "stop" if stop_on_eos and eos_id is not None and bool((next_token == eos_id).all()) else "length",
             "prefill_seconds": prefill_seconds,
             "decode_seconds": sum(decode_durations),
             "decode_token_seconds": decode_durations,
@@ -954,8 +1140,23 @@ class Qwen36TextRuntime:
             "loader": self.loader_report,
             "memory": {
                 "rss_before_prefill": rss_before_prefill,
-                "rss_after_generation": current_rss_bytes(),
-                "process_peak_rss": peak_rss_bytes(),
+                "rss_after_generation": int(process_after_generation["rss_bytes"]),
+                "process_peak_rss": int(process_after_generation["peak_rss_bytes"]),
+                "private_bytes_before_prefill": int(
+                    process_before_prefill["private_bytes"]
+                ),
+                "private_bytes_after_generation": int(
+                    process_after_generation["private_bytes"]
+                ),
+                "read_bytes": max(
+                    0,
+                    int(process_after_generation["read_bytes"])
+                    - int(process_before_prefill["read_bytes"]),
+                ),
+                "read_bytes_semantics": process_after_generation[
+                    "read_bytes_semantics"
+                ],
+                "platform_source": process_after_generation["platform_source"],
             },
         }
 

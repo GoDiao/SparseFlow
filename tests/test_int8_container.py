@@ -95,9 +95,11 @@ class Int8ContainerTest(unittest.TestCase):
                 expected = source[(0, part.part)][1].float()
                 self.assertTrue(torch.allclose(restored, expected, atol=0.08, rtol=0.02))
 
+            manifest_before = (output / "manifest.json").read_bytes()
             resumed = convert_experts_int8(model, output, resume=True)
             self.assertEqual(resumed["converted_layers"], 0)
             self.assertEqual(resumed["resumed_layers"], 1)
+            self.assertEqual((output / "manifest.json").read_bytes(), manifest_before)
 
             resident = Int8ResidentExpertProvider(output, torch)
             reader = ShardReader()
@@ -148,9 +150,14 @@ class Int8ContainerTest(unittest.TestCase):
                 )
                 self.assertTrue(torch.equal(actual, expected))
 
+            manifest_before = (output / "execution-manifest.json").read_bytes()
             resumed = build_int8_execution_metadata(output, resume=True)
             self.assertEqual(resumed["converted_layers"], 0)
             self.assertEqual(resumed["resumed_layers"], 1)
+            self.assertEqual(
+                (output / "execution-manifest.json").read_bytes(),
+                manifest_before,
+            )
 
             native = Int8ResidentExpertProvider(output, torch, native=True)
             try:

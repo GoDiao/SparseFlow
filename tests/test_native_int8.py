@@ -1,11 +1,13 @@
+import os
 import shutil
 import unittest
-from pathlib import Path
 
 import torch
 
 from sparseflow.moe_probe import run_routed_experts
 from sparseflow.native_int8 import (
+    _ensure_windows_msvc_environment,
+    _native_cflags,
     load_native_int8,
     native_profile_snapshot,
     reference_dynamic_linear,
@@ -13,16 +15,22 @@ from sparseflow.native_int8 import (
     set_native_profile,
 )
 from sparseflow.native_moe import run_fused_native_moe, run_grouped_native_moe
+from sparseflow.release import cpu_features
 
 
 def has_native_requirements() -> bool:
-    cpuinfo = Path("/proc/cpuinfo")
-    return (
-        cpuinfo.is_file()
-        and "avx512_vnni" in cpuinfo.read_text(encoding="utf-8")
-        and shutil.which("g++") is not None
-        and shutil.which("ninja") is not None
-    )
+    try:
+        _ensure_windows_msvc_environment()
+    except RuntimeError:
+        return False
+    compiler = shutil.which("cl") if os.name == "nt" else shutil.which("g++")
+    return cpu_features()["avx512_vnni"] and compiler is not None and shutil.which("ninja") is not None
+
+
+class NativeBuildConfigTest(unittest.TestCase):
+    def test_native_flags_are_platform_specific(self):
+        self.assertIn("/arch:AVX512", _native_cflags("nt"))
+        self.assertIn("-mavx512vnni", _native_cflags("posix"))
 
 
 @unittest.skipUnless(has_native_requirements(), "AVX-512 VNNI build environment required")

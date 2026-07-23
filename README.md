@@ -6,14 +6,17 @@ explicit resident or SSD/cache storage policy.
 
 The current release target is **Qwen3.6-35B-A3B text-only Public Alpha**.
 Vision, MTP, shared streaming batching, and production serving are not part of
-this release.
+this release. A local OpenAI-compatible server is available for the frontend
+integration workflow; see [`docs/api_contract.md`](docs/api_contract.md).
 
 ## Supported Environment
 
-The tested environment is Linux x86_64 with Python 3.12, PyTorch 2.9.x,
-Transformers 5.x development builds, Safetensors 0.8.x, and Accelerate 1.14.x.
+The tested environments are Linux x86_64 and Windows 10 with Python 3.12,
+PyTorch 2.9.x CPU, Transformers 5.x, Safetensors 0.8.x, and Accelerate 1.14.x.
 The native W8A8 backend requires AVX-512 VNNI. CPU-only Python inspection and
-planning commands do not require the runtime extras.
+planning commands do not require the runtime extras. See
+[`docs/installation.md`](docs/installation.md) for the complete Windows/Linux
+setup, storage budget, model preparation, Doctor checks, and server startup.
 
 This is a source checkout release. The native C++ sources are compiled into a
 local cache on first native run; no model payload is copied to the Python
@@ -76,6 +79,24 @@ PYTHONPATH=src python -m sparseflow run "$MODEL" \
   --output results/stage7_9_low_memory.json
 ```
 
+On a roughly 16 GiB Windows laptop, use the explicit experimental profile. It
+requires AVX-512 VNNI and enough *currently available* RAM; Doctor must pass
+before a real runtime is started:
+
+```bash
+PYTHONPATH=src python -m sparseflow doctor "$MODEL" \
+  --preset laptop-16gb --int8-container "$INT8" --check-native
+PYTHONPATH=src python -m sparseflow run "$MODEL" \
+  --preset laptop-16gb --int8-container "$INT8" \
+  --prompt "Explain sparse expert routing in one sentence." \
+  --max-new-tokens 2
+```
+
+`laptop-16gb` is experimental and does not mean that every 16 GiB laptop is
+supported. It uses a 256 MiB expert cache, 2048-token context, and a single
+request. It is not the default preset and does not bypass the RAM admission
+gate.
+
 The fixed-cohort grouped path is explicit and experimental:
 
 ```bash
@@ -115,6 +136,7 @@ baseline is documented in
 |---|---|
 | INT8 native resident hybrid | Stable baseline |
 | INT8 native single-request streaming S1 LRU | Stable low-memory |
+| INT8 native laptop-16gb streaming | Experimental, host-dependent |
 | INT8 native resident grouped fixed cohort | Experimental opt-in |
 | Shared streaming batching/subcohort | Disabled, known limitation |
 | Pure fused decode | Diagnostics only |

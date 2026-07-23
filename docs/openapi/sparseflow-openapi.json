@@ -1,0 +1,302 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SparseFlow Local Server",
+    "version": "1.0.0",
+    "description": "Frontend-facing text-only contract for the local SparseFlow Qwen3.6 runtime."
+  },
+  "servers": [
+    {"url": "http://127.0.0.1:8000"}
+  ],
+  "security": [{"bearerAuth": []}],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Runtime lifecycle and scheduler readiness.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Health"}}}
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "responses": {
+          "200": {
+            "description": "Configured model list.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ModelList"}}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    },
+    "/v1/models/{model_id}": {
+      "get": {
+        "operationId": "getModel",
+        "parameters": [{"$ref": "#/components/parameters/ModelId"}],
+        "responses": {
+          "200": {
+            "description": "Configured model.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Model"}}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/runtime": {
+      "get": {
+        "operationId": "getRuntime",
+        "responses": {
+          "200": {
+            "description": "Runtime identity, lifecycle, memory, and compact last-generation data.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuntimeSnapshot"}}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"}
+        }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "createChatCompletion",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChatCompletionRequest"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "One completion or an SSE stream when stream=true.",
+            "content": {
+              "application/json": {"schema": {"$ref": "#/components/schemas/ChatCompletion"}},
+              "text/event-stream": {"schema": {"type": "string"}}
+            }
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "429": {"$ref": "#/components/responses/Error"},
+          "499": {"$ref": "#/components/responses/Error"},
+          "503": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/v1/generations/{request_id}/cancel": {
+      "post": {
+        "operationId": "cancelGeneration",
+        "parameters": [{"$ref": "#/components/parameters/RequestId"}],
+        "responses": {
+          "202": {
+            "description": "Cancellation requested.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CancelResponse"}}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {"type": "http", "scheme": "bearer"}
+    },
+    "parameters": {
+      "ModelId": {"name": "model_id", "in": "path", "required": true, "schema": {"type": "string"}},
+      "RequestId": {"name": "request_id", "in": "path", "required": true, "schema": {"type": "string"}}
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Invalid or missing API key.",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}
+      },
+      "Error": {
+        "description": "Structured SparseFlow error.",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}
+      }
+    },
+    "schemas": {
+      "ErrorDetail": {
+        "type": "object",
+        "required": ["message", "type", "param", "code"],
+        "properties": {
+          "message": {"type": "string"},
+          "type": {"type": "string", "enum": ["invalid_request_error", "server_error"]},
+          "param": {"type": ["string", "null"]},
+          "code": {"type": "string"}
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {"error": {"$ref": "#/components/schemas/ErrorDetail"}}
+      },
+      "Scheduler": {
+        "type": "object",
+        "required": ["active", "active_request_id", "queued", "max_queue"],
+        "properties": {
+          "active": {"type": "boolean"},
+          "active_request_id": {"type": ["string", "null"]},
+          "queued": {"type": "integer", "minimum": 0},
+          "max_queue": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": true
+      },
+      "RuntimeSession": {
+        "type": "object",
+        "required": ["session_mode", "persistent_kv_supported"],
+        "properties": {
+          "session_mode": {"type": "string", "enum": ["stateless-full-message-replay"]},
+          "persistent_kv_supported": {"type": "boolean", "const": false}
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": ["status", "ready", "model", "preset", "scheduler", "runtime"],
+        "properties": {
+          "status": {"type": "string", "enum": ["loading", "ready", "busy", "error", "stopping", "stopped"]},
+          "ready": {"type": "boolean"},
+          "model": {"type": "string"},
+          "preset": {"type": "string"},
+          "scheduler": {"$ref": "#/components/schemas/Scheduler"},
+          "runtime": {"$ref": "#/components/schemas/RuntimeSession"}
+        }
+      },
+      "Model": {
+        "type": "object",
+        "required": ["id", "object", "created", "owned_by"],
+        "properties": {
+          "id": {"type": "string"},
+          "object": {"type": "string", "const": "model"},
+          "created": {"type": "integer"},
+          "owned_by": {"type": "string"}
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "required": ["object", "data"],
+        "properties": {
+          "object": {"type": "string", "const": "list"},
+          "data": {"type": "array", "items": {"$ref": "#/components/schemas/Model"}}
+        }
+      },
+      "EffectiveConfig": {
+        "type": "object",
+        "required": ["cache_bytes", "context_tokens", "max_completion_tokens"],
+        "properties": {
+          "cache_bytes": {"type": ["integer", "null"], "minimum": 0},
+          "context_tokens": {"type": "integer", "minimum": 1},
+          "max_completion_tokens": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": true
+      },
+      "ProcessMemory": {
+        "type": "object",
+        "required": ["rss_bytes", "peak_rss_bytes", "private_bytes"],
+        "properties": {
+          "rss_bytes": {"type": "integer", "minimum": 0},
+          "peak_rss_bytes": {"type": "integer", "minimum": 0},
+          "private_bytes": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": true
+      },
+      "RuntimeSnapshot": {
+        "type": "object",
+        "required": ["schema_version", "state", "model_id", "preset", "public_status", "effective_config", "runtime_load_count", "runtime_load_seconds", "runtime_identity", "model", "container", "process_memory", "last_generation"],
+        "properties": {
+          "schema_version": {"type": "integer", "const": 1},
+          "state": {"type": "string"},
+          "model_id": {"type": "string"},
+          "preset": {"type": "string"},
+          "public_status": {"type": "string"},
+          "effective_config": {"$ref": "#/components/schemas/EffectiveConfig"},
+          "runtime_load_count": {"type": "integer", "minimum": 0},
+          "runtime_load_seconds": {"type": "number", "minimum": 0},
+          "runtime_identity": {"type": "object", "additionalProperties": true},
+          "model": {"type": "object", "required": ["metadata_sha256"], "additionalProperties": true},
+          "container": {"type": "object", "required": ["metadata_sha256", "weight_bytes", "execution_bytes"], "additionalProperties": true},
+          "process_memory": {"$ref": "#/components/schemas/ProcessMemory"},
+          "last_generation": {"type": ["object", "null"], "additionalProperties": true}
+        },
+        "additionalProperties": true
+      },
+      "Message": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": {"type": "string", "enum": ["system", "developer", "user", "assistant"]},
+          "content": {"type": "string"}
+        }
+      },
+      "ChatCompletionRequest": {
+        "type": "object",
+        "required": ["model", "messages"],
+        "properties": {
+          "model": {"type": "string"},
+          "messages": {"type": "array", "minItems": 1, "items": {"$ref": "#/components/schemas/Message"}},
+          "max_completion_tokens": {"type": "integer", "minimum": 1},
+          "max_tokens": {"type": "integer", "minimum": 1},
+          "stream": {"type": "boolean", "default": false},
+          "stream_options": {"type": "object", "properties": {"include_usage": {"type": "boolean"}}},
+          "temperature": {"type": "number", "const": 0},
+          "top_p": {"type": "number", "const": 1},
+          "n": {"type": "integer", "const": 1},
+          "response_format": {"type": "object", "properties": {"type": {"type": "string", "const": "text"}}}
+        },
+        "additionalProperties": false
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": ["role", "content", "refusal"],
+        "properties": {
+          "role": {"type": "string", "const": "assistant"},
+          "content": {"type": "string"},
+          "refusal": {"type": ["string", "null"]}
+        }
+      },
+      "Choice": {
+        "type": "object",
+        "required": ["index", "message", "logprobs", "finish_reason"],
+        "properties": {
+          "index": {"type": "integer"},
+          "message": {"$ref": "#/components/schemas/ChatMessage"},
+          "logprobs": {"type": ["object", "null"]},
+          "finish_reason": {"type": ["string", "null"]}
+        }
+      },
+      "Usage": {
+        "type": "object",
+        "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+        "properties": {
+          "prompt_tokens": {"type": "integer", "minimum": 0},
+          "completion_tokens": {"type": "integer", "minimum": 0},
+          "total_tokens": {"type": "integer", "minimum": 0}
+        }
+      },
+      "ChatCompletion": {
+        "type": "object",
+        "required": ["id", "object", "created", "model", "choices", "usage", "sparseflow"],
+        "properties": {
+          "id": {"type": "string"},
+          "object": {"type": "string", "const": "chat.completion"},
+          "created": {"type": "integer"},
+          "model": {"type": "string"},
+          "choices": {"type": "array", "minItems": 1, "items": {"$ref": "#/components/schemas/Choice"}},
+          "usage": {"$ref": "#/components/schemas/Usage"},
+          "sparseflow": {"type": "object", "additionalProperties": true}
+        }
+      },
+      "CancelResponse": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": {"type": "string"},
+          "status": {"type": "string", "const": "cancellation_requested"}
+        }
+      }
+    }
+  }
+}

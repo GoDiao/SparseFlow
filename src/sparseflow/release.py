@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
-from typing import Any
+from typing import Any, Callable
 
 from .analyze import analyze_model, load_config
 from .int8_container import Int8ExpertIndex
@@ -36,6 +36,8 @@ class RuntimePreset:
     prefetch_policy: str
     batch_mode: str
     public_status: str
+    default_context_tokens: int
+    default_max_completion_tokens: int
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -55,6 +57,8 @@ PRESETS: dict[str, RuntimePreset] = {
         prefetch_policy="none",
         batch_mode="single",
         public_status="stable",
+        default_context_tokens=4096,
+        default_max_completion_tokens=256,
     ),
     "low-memory": RuntimePreset(
         name="low-memory",
@@ -69,6 +73,8 @@ PRESETS: dict[str, RuntimePreset] = {
         prefetch_policy="none",
         batch_mode="single",
         public_status="stable-low-memory",
+        default_context_tokens=4096,
+        default_max_completion_tokens=256,
     ),
     "experimental-batch": RuntimePreset(
         name="experimental-batch",
@@ -83,6 +89,24 @@ PRESETS: dict[str, RuntimePreset] = {
         prefetch_policy="none",
         batch_mode="fixed-cohort",
         public_status="experimental-opt-in",
+        default_context_tokens=4096,
+        default_max_completion_tokens=32,
+    ),
+    "laptop-16gb": RuntimePreset(
+        name="laptop-16gb",
+        description="Experimental INT8 streaming profile for hosts with about 16 GiB RAM.",
+        mode="streaming",
+        load_mode="memory-native",
+        expert_storage="int8-native",
+        native_dispatch="hybrid",
+        cache_policy="lru",
+        cache_bytes=256 * 1024**2,
+        prefetch_workers=0,
+        prefetch_policy="none",
+        batch_mode="single",
+        public_status="experimental-laptop",
+        default_context_tokens=2048,
+        default_max_completion_tokens=128,
     ),
 }
 
@@ -120,11 +144,40 @@ def _proc_mem_available(path: Path = Path("/proc/meminfo")) -> int:
     return 0
 
 
+def _windows_memory_available() -> int:
+    if os.name != "nt":
+        return 0
+    try:
+        import ctypes
+
+        class MemoryStatusEx(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        status = MemoryStatusEx()
+        status.dwLength = ctypes.sizeof(MemoryStatusEx)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return 0
+        return int(status.ullAvailPhys)
+    except (AttributeError, OSError, ValueError):
+        return 0
+
+
 def memory_snapshot(
     *,
     override_bytes: int | None = None,
     proc_meminfo_path: str | Path = "/proc/meminfo",
     cgroup_root: str | Path = "/sys/fs/cgroup",
+    windows_memory_provider: Callable[[], int] | None = None,
 ) -> dict[str, Any]:
     """Read usable memory, respecting cgroup limits when available.
 
@@ -135,6 +188,18 @@ def memory_snapshot(
     """
 
     host_available = _proc_mem_available(Path(proc_meminfo_path))
+    host_source = "proc-meminfo" if host_available else "unknown"
+    if not host_available:
+        provider = windows_memory_provider
+        if provider is None and os.name == "nt":
+            provider = _windows_memory_available
+        if provider is not None:
+            try:
+                host_available = max(0, int(provider()))
+            except (OSError, TypeError, ValueError):
+                host_available = 0
+            if host_available:
+                host_source = "windows-global-memory-status"
     root = Path(cgroup_root)
     cgroup_limit = None
     cgroup_current = None
@@ -169,7 +234,7 @@ def memory_snapshot(
         source = "cgroup"
     elif host_available:
         available = host_available
-        source = "proc-meminfo"
+        source = host_source
     else:
         available = 0
         source = "unknown"
@@ -285,6 +350,7 @@ def memory_budget(
     state = _estimate_state_bytes(analysis, ctx, 1)
 
     cache_bytes = int(effective_config.get("cache_bytes") or 0)
+    streaming_mode = effective_config.get("mode") == "streaming"
     batch_state = 0
     batch_workspace = 0
     if preset == "experimental-batch":
@@ -295,8 +361,8 @@ def memory_budget(
 
     components = {
         "dense_resident_bytes": dense,
-        "resident_int8_expert_bytes": int8_experts if preset != "low-memory" else 0,
-        "streaming_cache_bytes": cache_bytes if preset == "low-memory" else 0,
+        "resident_int8_expert_bytes": int8_experts if not streaming_mode else 0,
+        "streaming_cache_bytes": cache_bytes if streaming_mode else 0,
         "execution_row_sum_sidecar_bytes": row_sums,
         "kv_deltanet_state_bytes": state["kv_deltanet_state_bytes"],
         "activation_workspace_bytes": 1 * GIB,
@@ -383,7 +449,7 @@ def apply_preset(
     config = preset.as_dict()
     if cache_bytes is not None:
         if preset.mode != "streaming":
-            raise ValueError("--cache-bytes is only valid for the low-memory preset")
+            raise ValueError("--cache-bytes is only valid for streaming presets")
         if cache_bytes <= 0:
             raise ValueError("cache bytes must be positive")
         config["cache_bytes"] = int(cache_bytes)
@@ -493,21 +559,42 @@ def prepare_disk_check(model_dir: str | Path, output_dir: str | Path) -> dict[st
     }
 
 
-def cpu_features() -> dict[str, Any]:
+def cpu_features(
+    *,
+    proc_cpuinfo_path: str | Path = "/proc/cpuinfo",
+    cpuinfo_provider: Callable[[], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     flags: set[str] = set()
-    cpuinfo = Path("/proc/cpuinfo")
+    cpuinfo = Path(proc_cpuinfo_path)
+    flags_source = "unavailable"
     if cpuinfo.is_file():
         for line in cpuinfo.read_text(encoding="utf-8", errors="replace").splitlines():
             if line.lower().startswith(("flags", "features")) and ":" in line:
-                flags.update(line.split(":", 1)[1].strip().split())
+                flags.update(item.lower() for item in line.split(":", 1)[1].strip().split())
+                flags_source = str(cpuinfo)
                 break
+    else:
+        provider = cpuinfo_provider
+        if provider is None:
+            try:
+                from cpuinfo import get_cpu_info
+            except ImportError:
+                get_cpu_info = None
+            provider = get_cpu_info
+        if provider is not None:
+            try:
+                info = provider() or {}
+                flags.update(str(item).lower() for item in info.get("flags", ()))
+                flags_source = "py-cpuinfo"
+            except Exception:
+                pass
     return {
         "machine": platform.machine(),
         "processor": platform.processor(),
         "logical_cpus": os.cpu_count() or 1,
         "avx512f": "avx512f" in flags,
-        "avx512_vnni": "avx512_vnni" in flags,
-        "flags_source": str(cpuinfo) if cpuinfo.is_file() else "unavailable",
+        "avx512_vnni": bool({"avx512_vnni", "avx512vnni"} & flags),
+        "flags_source": flags_source,
     }
 
 

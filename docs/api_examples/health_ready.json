@@ -1,0 +1,17 @@
+{
+  "status": "ready",
+  "ready": true,
+  "model": "qwen3.6-35b-a3b-sparseflow",
+  "preset": "laptop-16gb",
+  "scheduler": {
+    "active": false,
+    "active_request_id": null,
+    "queued": 0,
+    "max_queue": 8
+  },
+  "runtime": {
+    "session_mode": "stateless-full-message-replay",
+    "persistent_kv_supported": false
+  },
+  "evidence": "SIMULATED"
+}

@@ -1,0 +1,13 @@
+: evidence=SIMULATED
+
+: sparseflow-keepalive
+
+data: {"id":"chatcmpl_0123456789abcdef","object":"chat.completion.chunk","created":1784800000,"model":"qwen3.6-35b-a3b-sparseflow","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl_0123456789abcdef","object":"chat.completion.chunk","created":1784800000,"model":"qwen3.6-35b-a3b-sparseflow","choices":[{"index":0,"delta":{"content":"Sparse routing"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl_0123456789abcdef","object":"chat.completion.chunk","created":1784800000,"model":"qwen3.6-35b-a3b-sparseflow","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl_0123456789abcdef","object":"chat.completion.chunk","created":1784800000,"model":"qwen3.6-35b-a3b-sparseflow","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":2,"total_tokens":14}}
+
+data: [DONE]

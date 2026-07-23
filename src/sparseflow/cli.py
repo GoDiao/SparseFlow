@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     doctor_p.add_argument("--int8-container")
     doctor_p.add_argument("--cache-bytes", help="Override low-memory cache budget, e.g. 4GiB.")
     doctor_p.add_argument("--available-ram", help="Override available RAM for admission, e.g. 16GiB.")
-    doctor_p.add_argument("--ctx", type=int, default=4096, help="Context length for RAM admission.")
+    doctor_p.add_argument("--ctx", type=int, help="Context length for RAM admission; defaults to the preset.")
     doctor_p.add_argument(
         "--batch-size",
         type=int,
@@ -163,10 +163,32 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--int8-container", required=True)
     run_p.add_argument("--prompt", action="append", required=True, help="Prompt; repeat for experimental-batch.")
     run_p.add_argument("--max-new-tokens", type=int, default=32)
+    run_p.add_argument("--ctx", type=int, help="Context admission limit for the text runtime.")
     run_p.add_argument("--cache-bytes", help="Override the low-memory preset budget.")
     run_p.add_argument("--telemetry-level", choices=("none", "summary", "profile", "layer"), default="summary")
     run_p.add_argument("--output")
     run_p.add_argument("--json", action="store_true")
+
+    serve_p = sub.add_parser(
+        "serve",
+        help="Start the local OpenAI-compatible SparseFlow server.",
+    )
+    serve_p.add_argument("model")
+    serve_p.add_argument("--preset", choices=("stable", "low-memory", "laptop-16gb"), default="low-memory")
+    serve_p.add_argument("--int8-container", required=True)
+    serve_p.add_argument("--cache-bytes")
+    serve_p.add_argument("--ctx", type=int, help="Context limit; defaults to the preset.")
+    serve_p.add_argument("--max-completion-tokens", type=int, help="Server output cap; defaults to the preset.")
+    serve_p.add_argument("--telemetry-level", choices=("none", "summary", "profile", "layer"), default="summary")
+    serve_p.add_argument("--host", default="127.0.0.1")
+    serve_p.add_argument("--port", type=int, default=8000)
+    serve_p.add_argument("--model-id", default="qwen3.6-35b-a3b-sparseflow")
+    serve_p.add_argument("--api-key")
+    serve_p.add_argument("--cors-origin", action="append", dest="cors_origins")
+    serve_p.add_argument("--max-queue", type=int, default=8)
+    serve_p.add_argument("--queue-timeout", type=float, default=300.0)
+    serve_p.add_argument("--keepalive-seconds", type=float, default=10.0)
+    serve_p.add_argument("--allow-unauthenticated-remote", action="store_true")
 
     native_plan_p = sub.add_parser(
         "native-plan",
@@ -551,10 +573,16 @@ def main(argv: list[str] | None = None) -> int:
                 if args.available_ram
                 else None
             )
-            if args.ctx <= 0:
+            context_tokens = (
+                args.ctx
+                if args.ctx is not None
+                else get_preset(args.preset).default_context_tokens
+            )
+            if context_tokens <= 0:
                 raise ValueError("--ctx must be positive")
             if args.batch_size <= 0:
                 raise ValueError("--batch-size must be positive")
+            batch_size = args.batch_size if args.preset == "experimental-batch" else 1
             result = doctor(
                 args.model,
                 preset=args.preset,
@@ -563,8 +591,8 @@ def main(argv: list[str] | None = None) -> int:
                 check_native=args.check_native,
                 full_payload_hash=args.full_payload_hash,
                 available_ram_bytes=available_ram,
-                ctx=args.ctx,
-                batch_size=args.batch_size,
+                ctx=context_tokens,
+                batch_size=batch_size,
             )
             print(json.dumps(result, indent=2, ensure_ascii=False) if args.json else _format_doctor(result))
             return 0 if result["ready"] else 1
@@ -614,6 +642,13 @@ def main(argv: list[str] | None = None) -> int:
                 telemetry_level=args.telemetry_level,
             )
             prompts = tuple(args.prompt)
+            context_tokens = (
+                args.ctx
+                if args.ctx is not None
+                else config["default_context_tokens"]
+            )
+            if context_tokens <= 0:
+                raise ValueError("--ctx must be positive")
             if config["batch_mode"] == "fixed-cohort":
                 if len(prompts) < 2:
                     raise ValueError("experimental-batch requires at least two --prompt values")
@@ -665,9 +700,10 @@ def main(argv: list[str] | None = None) -> int:
                     native_dispatch=config["native_dispatch"],
                 )
                 try:
-                    result = runtime.greedy_generate(
-                        prompts[0],
+                    result = runtime.generate_messages(
+                        [{"role": "user", "content": prompts[0]}],
                         max_new_tokens=args.max_new_tokens,
+                        context_tokens=context_tokens,
                         record_logit_fingerprints=True,
                     )
                 finally:
@@ -687,6 +723,69 @@ def main(argv: list[str] | None = None) -> int:
                 output.parent.mkdir(parents=True, exist_ok=True)
                 output.write_text(encoded + "\n", encoding="utf-8")
             print(encoded if args.json else _format_public_run(result))
+            return 0
+        if args.command == "serve":
+            if args.port < 0 or args.port > 65535:
+                raise ValueError("--port must be between 0 and 65535")
+            if args.max_queue < 0:
+                raise ValueError("--max-queue must be non-negative")
+            preset_defaults = get_preset(args.preset)
+            context_tokens = (
+                args.ctx
+                if args.ctx is not None
+                else preset_defaults.default_context_tokens
+            )
+            max_completion_tokens = (
+                args.max_completion_tokens
+                if args.max_completion_tokens is not None
+                else preset_defaults.default_max_completion_tokens
+            )
+            if context_tokens <= 0 or max_completion_tokens <= 0:
+                raise ValueError("--ctx and --max-completion-tokens must be positive")
+            import os
+            import signal
+            from .serving import SparseFlowEngine
+            from .serving_types import ServingConfig
+            from .server import SparseFlowAPIServer
+            cache_bytes = _parse_single_byte_budget(args.cache_bytes) if args.cache_bytes else None
+            config = ServingConfig(
+                model_dir=Path(args.model),
+                int8_container=Path(args.int8_container),
+                preset=args.preset,
+                ctx=context_tokens,
+                context_tokens=context_tokens,
+                max_completion_tokens=max_completion_tokens,
+                model_id=args.model_id,
+                host=args.host,
+                port=args.port,
+                cache_bytes=cache_bytes,
+                telemetry_level=args.telemetry_level,
+                max_queue=args.max_queue,
+                queue_timeout_seconds=args.queue_timeout,
+                keepalive_seconds=args.keepalive_seconds,
+                api_key=args.api_key or os.environ.get("SPARSEFLOW_API_KEY"),
+                cors_origins=tuple(args.cors_origins or ServingConfig.__dataclass_fields__["cors_origins"].default),
+                allow_unauthenticated_remote=args.allow_unauthenticated_remote,
+            )
+            engine = SparseFlowEngine(config)
+            api = SparseFlowAPIServer(engine, config)
+            httpd = api.server()
+            print(f"SparseFlow server listening on http://{args.host}:{httpd.server_port}", flush=True)
+            def _shutdown_signal(_signum, _frame):
+                raise KeyboardInterrupt
+
+            previous_signals = {}
+            for signum in (signal.SIGINT, signal.SIGTERM):
+                previous_signals[signum] = signal.getsignal(signum)
+                signal.signal(signum, _shutdown_signal)
+            try:
+                httpd.serve_forever()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                for signum, previous in previous_signals.items():
+                    signal.signal(signum, previous)
+                api.close()
             return 0
         if args.command == "inspect":
             result = analyze_model(args.model)
