@@ -69,7 +69,9 @@ def main() -> int:
     parser.add_argument("--int8-container", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
-    python = str(Path(args.python).expanduser().resolve())
+    # Preserve the venv entry point. Resolving a venv symlink can silently
+    # replace a no-Torch interpreter with the underlying runtime interpreter.
+    python = str(Path(args.python).expanduser())
     model = str(Path(args.model).expanduser().resolve())
     container = str(Path(args.int8_container).expanduser().resolve())
     base = [python, "-m", "sparseflow"]
