@@ -517,7 +517,7 @@ def main() -> int:
         "source_resume": str(raw_cache / "prepare_resume.json"),
     })
 
-    cold = load(root / "resident_streaming_matrix.json")["cells"][3]
+    cold = matrix_files[3]
     dump(output / "model_cold_matrix.json", {
         **shared,
         "kind": "sparseflow_stage7_9_model_cold_matrix",
