@@ -168,6 +168,48 @@ def run_metrics(wrapper: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def cold_metrics(sample: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a physical-I/O sample without mixing it with the 32-token matrix."""
+
+    result = sample.get("output") or {}
+    timings = [float(x) for x in result.get("decode_token_seconds", [])]
+    provider = result.get("provider_storage") or {}
+    cache = result.get("cache") or {}
+    memory = result.get("memory") or {}
+    process_peak = max(
+        sample.get("peak_hwm_bytes_sampled") or 0,
+        memory.get("process_peak_rss") or 0,
+    ) or None
+    return {
+        "generated_tokens": result.get("generated_tokens"),
+        "prefill_seconds": result.get("prefill_seconds"),
+        "decode_seconds": result.get("decode_seconds"),
+        "decode_tokens_per_second": (
+            result.get("generated_tokens", 0) / result.get("decode_seconds", 1)
+            if result.get("decode_seconds") else None
+        ),
+        "token_latency_p50_seconds": percentile(timings, 0.50),
+        "token_latency_p95_seconds": percentile(timings, 0.95),
+        "current_rss_bytes": memory.get("rss_after_generation"),
+        "peak_rss_bytes": process_peak,
+        "provider_logical_read_bytes": result.get("provider_logical_read_bytes"),
+        "provider_loaded_bytes": result.get("provider_loaded_bytes"),
+        "process_physical_read_bytes": sample.get("process_physical_read_bytes"),
+        "process_physical_read_bytes_status": "sampled" if sample.get("process_physical_read_bytes") is not None else "not-sampled",
+        "cache": {
+            "budget_bytes": cache.get("cached_bytes"),
+            "hits": cache.get("hits"),
+            "misses": cache.get("misses"),
+            "evictions": cache.get("evictions"),
+            "cached_bytes": cache.get("cached_bytes"),
+            "pinned_entries": cache.get("pinned_entries", 0),
+            "pinned_bytes": cache.get("pinned_bytes", 0),
+        },
+        "leases_zero": cache.get("pinned_entries", 0) == 0 and cache.get("pinned_bytes", 0) == 0,
+        "runtime_identity": result.get("runtime_identity"),
+    }
+
+
 def matrix_cell(name: str, files: list[Path], raw_root: Path, raw_cache: Path, budget: int | None, state: str) -> dict[str, Any]:
     samples = [run_metrics(load(path)) for path in files]
     def vals(key: str) -> list[float]:
@@ -406,18 +448,43 @@ def main() -> int:
         matrix_cell("streaming-s1-8g-warm", [root / "run_streaming_8g_warm.json"], root, raw_cache, 8 * 1024**3, "warm"),
         matrix_cell("streaming-s1-4g-model-cold", [root / f"run_streaming_4g_cold_{i}.json" for i in (1, 2, 3)], root, raw_cache, 4 * 1024**3, "model-cold"),
     ]
-    cold_cell = matrix_files[3]
-    cold_physical = []
-    for index, physical_sample in enumerate(cold_evidence.get("samples", [])):
-        if index >= len(cold_cell["samples"]):
-            break
-        value = physical_sample.get("process_physical_read_bytes")
-        cold_cell["samples"][index]["process_physical_read_bytes"] = value
-        cold_cell["samples"][index]["process_physical_read_bytes_status"] = (
-            "sampled" if value is not None else "not-sampled"
-        )
-        if value is not None:
-            cold_physical.append(value)
+    cold_samples = [cold_metrics(sample) for sample in cold_evidence.get("samples", [])]
+    cold_physical = [
+        sample["process_physical_read_bytes"]
+        for sample in cold_samples
+        if sample.get("process_physical_read_bytes") is not None
+    ]
+    cold_cell = {
+        "name": "streaming-s1-4g-model-cold",
+        "state": "model-cold",
+        "cache_budget_bytes": 4 * 1024**3,
+        "protocol": {
+            "max_new_tokens": cold_evidence.get("protocol", {}).get("max_new_tokens"),
+            "independent_processes": cold_evidence.get("protocol", {}).get("independent_processes"),
+            "physical_counter": cold_evidence.get("protocol", {}).get("physical_counter"),
+        },
+        "raw_files": [
+            str(raw_cache / "cold_io" / f"run_{sample.get('index')}.json")
+            for sample in cold_evidence.get("samples", [])
+        ],
+        "sample_count": len(cold_samples),
+        "samples": cold_samples,
+        "summary": {
+            "ttft_p50_seconds": statistics.median([x["prefill_seconds"] for x in cold_samples if x.get("prefill_seconds") is not None]) if any(x.get("prefill_seconds") is not None for x in cold_samples) else None,
+            "decode_tok_per_second_p50": statistics.median([x["decode_tokens_per_second"] for x in cold_samples if x.get("decode_tokens_per_second") is not None]) if any(x.get("decode_tokens_per_second") is not None for x in cold_samples) else None,
+            "token_latency_p50_seconds": statistics.median([x["token_latency_p50_seconds"] for x in cold_samples if x.get("token_latency_p50_seconds") is not None]) if any(x.get("token_latency_p50_seconds") is not None for x in cold_samples) else None,
+            "token_latency_p95_seconds": statistics.median([x["token_latency_p95_seconds"] for x in cold_samples if x.get("token_latency_p95_seconds") is not None]) if any(x.get("token_latency_p95_seconds") is not None for x in cold_samples) else None,
+            "current_rss_bytes_p50": statistics.median([x["current_rss_bytes"] for x in cold_samples if x.get("current_rss_bytes") is not None]) if any(x.get("current_rss_bytes") is not None for x in cold_samples) else None,
+            "peak_rss_bytes_max": max([x["peak_rss_bytes"] for x in cold_samples if x.get("peak_rss_bytes") is not None], default=None),
+            "provider_logical_read_bytes_p50": statistics.median([x["provider_logical_read_bytes"] for x in cold_samples if x.get("provider_logical_read_bytes") is not None]) if any(x.get("provider_logical_read_bytes") is not None for x in cold_samples) else None,
+            "process_physical_read_bytes": statistics.median(cold_physical) if cold_physical else None,
+            "process_physical_read_bytes_p50": statistics.median(cold_physical) if cold_physical else None,
+            "process_physical_read_bytes_min": min(cold_physical) if cold_physical else None,
+            "process_physical_read_bytes_max": max(cold_physical) if cold_physical else None,
+        },
+        "all_success": all(sample["leases_zero"] for sample in cold_samples),
+    }
+    matrix_files[3] = cold_cell
     if cold_physical:
         cold_cell["summary"]["process_physical_read_bytes_p50"] = statistics.median(cold_physical)
         cold_cell["summary"]["process_physical_read_bytes_min"] = min(cold_physical)
