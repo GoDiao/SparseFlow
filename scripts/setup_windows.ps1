@@ -22,6 +22,7 @@ $env:PIP_CACHE_DIR = Join-Path $cacheRoot "pip"
 $env:TEMP = Join-Path $cacheRoot "tmp"
 $env:TMP = $env:TEMP
 $env:SPARSEFLOW_NATIVE_CACHE = Join-Path $cacheRoot "native\int8_vnni_windows"
+$env:PYTHONUTF8 = "1"
 
 @(
     $env:UV_CACHE_DIR,

@@ -34,6 +34,7 @@ def check_installation(root: Path, *, clean_replay: bool, run_tests: bool = Fals
     python_path = Path(sys.executable).resolve()
     environment = os.environ.copy()
     environment["PYTHONPATH"] = str(root / "src")
+    environment["PYTHONUTF8"] = "1"
     preset = subprocess.run(
         [sys.executable, "-m", "sparseflow", "preset", "laptop-16gb", "--json"],
         cwd=root,
@@ -97,6 +98,7 @@ def check_installation(root: Path, *, clean_replay: bool, run_tests: bool = Fals
         "preset_cli": preset_ok,
         "setup_scripts": all(scripts.values()),
         "cache_paths_on_project_drive": cache_on_project_drive,
+        "utf8_environment": os.environ.get("PYTHONUTF8") == "1",
         "clean_replay_declared": clean_replay,
     }
     if run_tests:
