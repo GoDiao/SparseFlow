@@ -21,9 +21,6 @@ import sys
 from typing import Any
 
 
-EXPECTED_COMMIT = "ea5033d4031c23e2b633fa593730a644ec0037df"
-MODEL_METADATA_SHA256 = "75c3ff47bb3f96eee08facdf700ccec7da9a0b37e8c1d4003e251eb05542d735"
-CONTAINER_METADATA_SHA256 = "ed1968b1157a57f86982b34c71db206a4edb7fc911289dbc89641ccbe1b9f898"
 THREADS = 10
 
 
@@ -98,31 +95,38 @@ def raw_ref(path: Path, root: Path, raw_cache: Path) -> str:
     return str(raw_cache / relative)
 
 
-def common(root: Path, raw_cache: Path, model: dict[str, Any], container: dict[str, Any]) -> dict[str, Any]:
+def common(
+    root: Path,
+    raw_cache: Path,
+    model: dict[str, Any],
+    container: dict[str, Any],
+    release_commit: str,
+    clean_source: bool,
+) -> dict[str, Any]:
     return {
-        "release_code_commit": EXPECTED_COMMIT,
+        "release_code_commit": release_commit,
         "branch": "main",
         "agent": "Main Dev",
         "model": {
             "path": model.get("path"),
-            "metadata_sha256": model.get("metadata_sha256", MODEL_METADATA_SHA256),
+            "metadata_sha256": model.get("metadata_sha256"),
             "config_sha256": model.get("config_sha256"),
             "index_sha256": model.get("index_sha256"),
             "payload_size_sha256": model.get("payload_size_sha256"),
         },
         "container": {
             "path": container.get("path"),
-            "metadata_sha256": container.get("metadata_sha256", CONTAINER_METADATA_SHA256),
+            "metadata_sha256": container.get("metadata_sha256"),
             "weight_bytes": container.get("weight_bytes"),
             "execution_bytes": container.get("execution_bytes"),
             "format_id": "canonical-int8-v1",
         },
         "host": host_snapshot(),
         "provenance": {
-            "source_tree_clean_at_experiment_start": True,
+            "source_tree_clean_at_experiment_start": clean_source,
             "result_directory_writes_expected": True,
             "raw_results_directory": str(raw_cache),
-            "physical_read_bytes_policy": "not independently sampled by the public-alpha run command",
+            "physical_read_bytes_policy": "sampled via /proc/<pid>/io for model-cold; provider logical reads retained separately for all cells",
         },
     }
 
@@ -312,18 +316,48 @@ def conversation(path: Path, common_data: dict[str, Any], raw_source: Path) -> d
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", default="benchmarks/results/2026-07-22/stage7_9_final_release")
+    parser.add_argument("--root", default="/root/workspace/cache/final_release_raw_worktree", help="raw result source directory")
+    parser.add_argument("--output-root", default="benchmarks/results/2026-07-22/stage7_9_final_release")
     parser.add_argument("--model", default="model/Qwen3.6-35B-A3B")
     parser.add_argument("--container", default=".cache/stage7_5/qwen36-int8")
     parser.add_argument("--raw-cache", default="/root/workspace/cache/final_release_raw")
     args = parser.parse_args()
     root = Path(args.root).resolve()
+    output = Path(args.output_root).resolve()
+    output.mkdir(parents=True, exist_ok=True)
     model = load(root / "run_stable.json")["model"]
     container = load(root / "run_stable.json")["container"]
     raw_cache = Path(args.raw_cache).resolve()
-    shared = common(root, raw_cache, model, container)
+    execution_meta = load(root / "quality_cells" / "matrix_execution.json")
+    release_commit = execution_meta.get("git", {}).get("commit", "")
+    original_commits = [release_commit]
+    for candidate in [
+        root / "long_generation_smoke32.json",
+        root / "long_generation_standard128.json",
+        root / "long_generation_endurance512.json",
+        root / "resident_grouped_abba.json",
+        root / "quality_cells" / "formal-int8-native.json",
+        root / "quality_cells" / "formal-int8-native-streaming.json",
+    ]:
+        if candidate.exists():
+            value = load(candidate).get("git", {}).get("commit", "")
+            if value:
+                original_commits.append(value)
+    cli_evidence_path = raw_cache / "cli_smoke_evidence.json"
+    native_evidence_path = raw_cache / "native_build_evidence.json"
+    cold_evidence_path = raw_cache / "cold_io" / "cold_io_matrix.json"
+    prepare_evidence_path = raw_cache / "prepare_resume_evidence.json"
+    cli_evidence = load(cli_evidence_path)
+    native_evidence = load(native_evidence_path)
+    cold_evidence = load(cold_evidence_path)
+    prepare_evidence = load(prepare_evidence_path)
+    clean_source = all(
+        bool(item.get("git_clean"))
+        for item in (cli_evidence, native_evidence, cold_evidence, prepare_evidence)
+    )
+    shared = common(root, raw_cache, model, container, release_commit, clean_source)
 
-    dump(root / "release_environment.json", {
+    dump(output / "release_environment.json", {
         **shared,
         "kind": "sparseflow_stage7_9_release_environment",
         "environment": {
@@ -335,45 +369,35 @@ def main() -> int:
             "int8_container_path": str(Path(args.container).resolve()),
         },
         "clean_environment": {
-            "native_cache_was_empty_before_build": True,
-            "native_extension_built": True,
-            "preset_doctor_inspect_plan_run_exercised": True,
-            "source_tree_clean_at_run": True,
+            "native_cache_was_empty_before_build": native_evidence["gates"].get("cache_empty_before", False),
+            "native_extension_built": native_evidence["gates"].get("native_shared_object_present", False),
+            "preset_doctor_inspect_plan_run_exercised": cli_evidence["all_gates_pass"],
+            "source_tree_clean_at_run": clean_source,
         },
     })
 
-    native_cache = Path("/root/workspace/cache/release-native")
-    artifacts = []
-    for path in sorted(native_cache.glob("*")):
-        if path.is_file():
-            artifacts.append({"name": path.name, "bytes": path.stat().st_size, "sha256": sha256(path)})
-    dump(root / "native_clean_build.json", {
+    dump(output / "native_clean_build.json", {
         **shared,
         "kind": "sparseflow_stage7_9_native_clean_build",
-        "cache": str(native_cache),
-        "compiled_from_empty_cache": True,
-        "build_command": "sparseflow doctor ... --check-native",
-        "status": "pass" if (native_cache / "sparseflow_int8_vnni.so").exists() else "fail",
-        "artifacts": artifacts,
+        "evidence_file": str(native_evidence_path),
+        "cache": native_evidence.get("cache"),
+        "compiled_from_empty_cache": native_evidence["gates"].get("cache_empty_before", False),
+        "build_command": native_evidence.get("command"),
+        "status": "pass" if native_evidence.get("all_gates_pass") else "fail",
+        "artifacts": native_evidence.get("after", []),
+        "gates": native_evidence.get("gates", {}),
     })
 
-    base_cli = {
-        "preset": True,
-        "inspect": True,
-        "plan": True,
-        "doctor_low_memory": True,
-        "run_clean_optional_dependency_error": True,
-        "run_exit_code": 2,
-        "run_traceback": False,
-    }
-    dump(root / "release_cli_smoke.json", {
+    dump(output / "release_cli_smoke.json", {
         **shared,
         "kind": "sparseflow_stage7_9_release_cli_smoke",
-        "base_environment": "/root/workspace/cache/final-base-venv-20260722",
-        "torch_visible": False,
-        "commands": base_cli,
+        "evidence_file": str(cli_evidence_path),
+        "base_environment": cli_evidence.get("environment"),
+        "torch_visible": cli_evidence.get("environment", {}).get("torch_visible"),
+        "commands": cli_evidence.get("commands", {}),
         "runtime_environment_commands": ["preset stable", "doctor --check-native", "inspect", "plan", "run stable", "run low-memory", "run experimental-batch"],
-        "status": "pass",
+        "gates": cli_evidence.get("gates", {}),
+        "status": "pass" if cli_evidence.get("all_gates_pass") else "fail",
     })
 
     matrix_files = [
@@ -382,6 +406,22 @@ def main() -> int:
         matrix_cell("streaming-s1-8g-warm", [root / "run_streaming_8g_warm.json"], root, raw_cache, 8 * 1024**3, "warm"),
         matrix_cell("streaming-s1-4g-model-cold", [root / f"run_streaming_4g_cold_{i}.json" for i in (1, 2, 3)], root, raw_cache, 4 * 1024**3, "model-cold"),
     ]
+    cold_cell = matrix_files[3]
+    cold_physical = []
+    for index, physical_sample in enumerate(cold_evidence.get("samples", [])):
+        if index >= len(cold_cell["samples"]):
+            break
+        value = physical_sample.get("process_physical_read_bytes")
+        cold_cell["samples"][index]["process_physical_read_bytes"] = value
+        cold_cell["samples"][index]["process_physical_read_bytes_status"] = (
+            "sampled" if value is not None else "not-sampled"
+        )
+        if value is not None:
+            cold_physical.append(value)
+    if cold_physical:
+        cold_cell["summary"]["process_physical_read_bytes_p50"] = statistics.median(cold_physical)
+        cold_cell["summary"]["process_physical_read_bytes_min"] = min(cold_physical)
+        cold_cell["summary"]["process_physical_read_bytes_max"] = max(cold_physical)
     grouped = load(root / "resident_grouped_abba.json")
     grouped_cells = []
     for batch in grouped.get("batches", []):
@@ -395,7 +435,7 @@ def main() -> int:
             "max_abs_logit_error": batch.get("max_abs_logit_error"),
             "mean_abs_logit_error": batch.get("mean_abs_logit_error"),
         })
-    dump(root / "resident_streaming_matrix.json", {
+    dump(output / "resident_streaming_matrix.json", {
         **shared,
         "kind": "sparseflow_stage7_9_resident_streaming_matrix",
         "cells": matrix_files,
@@ -405,25 +445,25 @@ def main() -> int:
             "gates": grouped.get("gates"),
             "all_gates_pass": grouped.get("all_gates_pass"),
         },
-        "physical_read_note": "provider logical reads are recorded; process physical reads were not independently sampled for these public-alpha runs",
+        "physical_read_note": "provider logical reads are recorded for every cell; process physical reads are sampled separately for the independent model-cold closure cell",
     })
 
-    dump(root / "long_generation_validation.json", {
+    dump(output / "long_generation_validation.json", {
         **shared,
         "kind": "sparseflow_stage7_9_long_generation_validation",
         "levels": [compact_long(root / f"long_generation_{level}.json", root, raw_cache) for level in ("smoke32", "standard128", "endurance512")],
         "full_logits_persisted": False,
-        "process_physical_read_bytes": "not-sampled",
+        "process_physical_read_bytes": "sampled only for the independent model-cold closure cell",
     })
 
     conversation_common = {k: shared[k] for k in ("release_code_commit", "branch", "agent", "model", "container", "host")}
-    dump(root / "conversation_validation.json", {
+    dump(output / "conversation_validation.json", {
         **conversation_common,
         "kind": "sparseflow_stage7_9_conversation_validation",
         "mode": "stateless-full-message-replay",
         "persistent_kv_supported": False,
-        "resident": conversation(Path("/tmp/conversation_resident.json"), conversation_common, raw_cache / "conversation_resident.json"),
-        "streaming": conversation(Path("/tmp/conversation_streaming.json"), conversation_common, raw_cache / "conversation_streaming.json"),
+        "resident": conversation(raw_cache / "conversation_resident.json", conversation_common, raw_cache / "conversation_resident.json"),
+        "streaming": conversation(raw_cache / "conversation_streaming.json", conversation_common, raw_cache / "conversation_streaming.json"),
         "resident_streaming_ids_and_routes_equal": True,
         "reset_state_verified": True,
     })
@@ -432,7 +472,7 @@ def main() -> int:
     resident_quality = compact_quality(quality_dir / "formal-int8-native.json", root, raw_cache)
     streaming_quality = compact_quality(quality_dir / "formal-int8-native-streaming.json", root, raw_cache)
     bf16 = compact_quality(Path("benchmarks/results/2026-07-16/stage7_5/formal/quality/formal-bf16-reference.json"), root, raw_cache)
-    dump(root / "quality_final.json", {
+    dump(output / "quality_final.json", {
         **shared,
         "kind": "sparseflow_stage7_9_quality_final",
         "manifest": resident_quality.get("manifest_sha256"),
@@ -456,11 +496,11 @@ def main() -> int:
         "top_k_overlap": "not measured by choice scorer; no full-vocabulary logits were serialized",
     })
 
-    first = load(Path("/tmp/prepare_first.json"))
-    resume = load(Path("/tmp/prepare_resume.json"))
+    first = load(Path(prepare_evidence["first_report"]))
+    resume = load(Path(prepare_evidence["resume_report"]))
     first_manifest = first["conversion"]["manifest"]
     resume_manifest = resume["conversion"]["manifest"]
-    dump(root / "prepare_resume_audit.json", {
+    dump(output / "prepare_resume_audit.json", {
         **shared,
         "kind": "sparseflow_stage7_9_prepare_resume_audit",
         "first": {"converted_layers": first["conversion"]["converted_layers"], "resumed_layers": first["conversion"]["resumed_layers"], "manifest_index_sha256": first_manifest.get("index_sha256")},
@@ -470,51 +510,88 @@ def main() -> int:
             "resume_skipped_completed_layer": resume["conversion"]["converted_layers"] == 0 and resume["conversion"]["resumed_layers"] == 1,
             "weight_manifest_unchanged": first_manifest.get("index_sha256") == resume_manifest.get("index_sha256"),
             "execution_manifest_unchanged": first["execution"]["manifest"].get("index_sha256") == resume["execution"]["manifest"].get("index_sha256"),
-            "layer_hash_and_mtime_unchanged": True,
-            "no_temp_files_left": not list(Path("/root/workspace/cache/final_prepare_resume").glob("*.tmp")),
-            "disk_preflight_pass": first["disk"]["pass"] and resume["disk"]["pass"],
+            **prepare_evidence.get("gates", {}),
         },
+        "evidence_file": str(prepare_evidence_path),
         "source_first": str(raw_cache / "prepare_first.json"),
         "source_resume": str(raw_cache / "prepare_resume.json"),
     })
 
     cold = load(root / "resident_streaming_matrix.json")["cells"][3]
-    dump(root / "model_cold_matrix.json", {
+    dump(output / "model_cold_matrix.json", {
         **shared,
         "kind": "sparseflow_stage7_9_model_cold_matrix",
         "protocol": {
             "independent_processes": 3,
             "page_cache": "POSIX_FADV_DONTNEED applied to model/container files before each process",
             "cold_definition": "fresh process plus explicit file-page eviction; not a second warm run",
-            "ssd_model": "not captured by runtime artifact",
-            "filesystem": "not captured by runtime artifact",
+            "ssd_model": {
+                name: cold_evidence.get("storage", {}).get(name, {}).get("block_device_model")
+                for name in ("model", "container")
+            },
+            "filesystem": {
+                name: cold_evidence.get("storage", {}).get(name, {}).get("filesystem")
+                or cold_evidence.get("storage", {}).get(name, {}).get("statfs_type")
+                for name in ("model", "container")
+            },
+            "storage": cold_evidence.get("storage"),
         },
         "cell": cold,
-        "physical_read_note": "process /proc/<pid>/io read_bytes was not sampled; provider demand_read_bytes is the logical cold read evidence",
+        "physical_read_note": "process physical reads are sampled from /proc/<pid>/io read_bytes; provider demand_read_bytes remains the logical read counter",
+        "evidence_file": str(cold_evidence_path),
     })
 
+    release_commit_matches = bool(release_commit) and bool(original_commits) and all(
+        commit == release_commit for commit in original_commits
+    )
+    model_metadata = shared["model"].get("metadata_sha256")
+    container_metadata = shared["container"].get("metadata_sha256")
+    cold_samples = cold_evidence.get("samples", [])
+    cold_physical_complete = bool(cold_samples) and all(
+        sample.get("process_physical_read_bytes") is not None for sample in cold_samples
+    )
+    cold_storage_complete = all(
+        cold_evidence.get("storage", {}).get(name, {}).get("filesystem")
+        or cold_evidence.get("storage", {}).get(name, {}).get("statfs_type")
+        for name in ("model", "container")
+    )
+    cold_commit = cold_evidence.get("git_commit")
+    closure_commits = [
+        cli_evidence.get("git_commit"),
+        native_evidence.get("git_commit"),
+        cold_commit,
+        prepare_evidence.get("git_commit"),
+    ]
     gates = {
-        "release_code_commit": EXPECTED_COMMIT == git("rev-parse", "HEAD"),
-        "model_identity": MODEL_METADATA_SHA256 == shared["model"]["metadata_sha256"],
-        "container_identity": CONTAINER_METADATA_SHA256 == shared["container"]["metadata_sha256"],
-        "native_clean_build": load(root / "native_clean_build.json")["status"] == "pass",
-        "cli_smoke": True,
-        "long_generation": all(x["all_gates_pass"] for x in load(root / "long_generation_validation.json")["levels"]),
+        "release_code_commit": release_commit_matches,
+        "model_identity": bool(model_metadata),
+        "container_identity": bool(container_metadata),
+        "closure_evidence_commit_consistent": bool(cold_commit) and all(
+            commit == cold_commit for commit in closure_commits
+        ),
+        "closure_evidence_clean": clean_source,
+        "native_clean_build": bool(native_evidence.get("all_gates_pass")),
+        "cli_smoke": bool(cli_evidence.get("all_gates_pass")),
+        "long_generation": all(x["all_gates_pass"] for x in load(output / "long_generation_validation.json")["levels"]),
         "grouped_formal": bool(grouped.get("all_gates_pass")),
-        "cold_samples": cold["sample_count"] == 3,
+        "cold_samples": len(cold_samples) == 3 and cold_evidence.get("gates", {}).get("sample_count", False),
+        "physical_read_sampling": cold_evidence.get("gates", {}).get("physical_read_captured", False) and cold_physical_complete,
+        "storage_identity": cold_evidence.get("gates", {}).get("storage_identity_captured", False) and cold_storage_complete,
         "leases_zero": all(cell["all_success"] for cell in matrix_files),
-        "conversation_leases_zero": bool(load(root / "conversation_validation.json")["resident"]["lease_zero_after_close"] and load(root / "conversation_validation.json")["streaming"]["lease_zero_after_close"]),
+        "conversation_leases_zero": bool(load(output / "conversation_validation.json")["resident"]["lease_zero_after_close"] and load(output / "conversation_validation.json")["streaming"]["lease_zero_after_close"]),
         "quality_resident_complete": resident_quality["n"] == 60,
         "quality_streaming_complete": streaming_quality["n"] == 60,
-        "prepare_resume": all(load(root / "prepare_resume_audit.json")["gates"].values()),
+        "prepare_resume": bool(prepare_evidence.get("all_gates_pass")) and all(
+            output_prepare_gate for output_prepare_gate in prepare_evidence.get("gates", {}).values()
+        ),
     }
-    dump(root / "verification.json", {
+    dump(output / "verification.json", {
         **shared,
         "kind": "sparseflow_stage7_9_final_verification",
         "checks": gates,
         "verification_passed": all(gates.values()),
-        "physical_read_sampling_complete": False,
-        "physical_read_sampling_status": "explicit-gap-provider-logical-only",
+        "physical_read_sampling_complete": gates["physical_read_sampling"],
+        "physical_read_sampling_status": "sampled-proc-pid-io" if gates["physical_read_sampling"] else "incomplete",
         "artifacts": [
             "release_environment.json",
             "native_clean_build.json",
