@@ -62,6 +62,7 @@ class Stage711LaptopTest(unittest.TestCase):
         summary = summarize(artifact)
         self.assertEqual([(cell["prompt_id"], cell["max_new_tokens"]) for cell in summary["cells"]], [("en-explain", 8), ("en-explain", 16)])
         self.assertFalse(summary["gates"]["passed"])
+        self.assertFalse(summary["gates"]["formal_matrix_shape"])
         self.assertFalse(summary["gates"]["performance_threshold_configured"])
 
     def test_compact_result_removes_large_route_payload(self):
@@ -138,7 +139,8 @@ class Stage711LaptopTest(unittest.TestCase):
             ],
         }
         verification = verify(artifact)
-        self.assertTrue(verification["verification_passed"], verification)
+        self.assertFalse(verification["verification_passed"], verification)
+        self.assertIn("formal_matrix_shape", verification["failures"])
 
     def test_verifier_rejects_dirty_formal_fixture(self):
         artifact = {

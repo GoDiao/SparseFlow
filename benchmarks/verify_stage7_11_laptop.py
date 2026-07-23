@@ -31,6 +31,14 @@ def verify(result: dict[str, Any], *, require_clean: bool = True) -> dict[str, A
         for values in by_cell.values()
     )
     token_counts = protocol.get("token_counts") or []
+    formal_shape = (
+        not token_counts
+        or (
+            int(protocol.get("prompt_count") or 0) == 3
+            and int(protocol.get("repeats") or 0) == 2
+            and sorted(int(value) for value in token_counts) == [8, 16, 32]
+        )
+    )
     expected_cells = (
         int(protocol.get("prompt_count") or 0)
         * int(protocol.get("repeats") or 0)
@@ -43,6 +51,7 @@ def verify(result: dict[str, Any], *, require_clean: bool = True) -> dict[str, A
         "agent": result.get("agent") == "Benchmark",
         "mode": protocol.get("mode") == "process-cold",
         "samples_present": bool(samples),
+        "formal_matrix_shape": formal_shape,
         "matrix_cardinality": expected_cells is None or len(samples) == expected_cells,
         "git_identity": bool(result.get("git", {}).get("commit")),
         "clean_commit": (not require_clean) or result.get("git", {}).get("dirty") is False,

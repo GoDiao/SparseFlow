@@ -73,6 +73,11 @@ def summarize(result: dict[str, Any], *, max_peak_rss_gib: float = 11.0, min_32_
     if not token_counts and protocol.get("max_new_tokens") is not None:
         token_counts = [int(protocol["max_new_tokens"])]
     expected = int(protocol.get("prompt_count") or 0) * int(protocol.get("repeats") or 0) * len(token_counts)
+    formal_shape = (
+        int(protocol.get("prompt_count") or 0) == 3
+        and int(protocol.get("repeats") or 0) == 2
+        and sorted(token_counts) == [8, 16, 32]
+    )
     all_success = bool(samples) and all(item.get("exit_code") == 0 for item in samples)
     repeat_exact = True
     for values in cells.values():
@@ -115,12 +120,14 @@ def summarize(result: dict[str, Any], *, max_peak_rss_gib: float = 11.0, min_32_
         "cells": summaries,
         "gates": {
             "matrix_cardinality": expected > 0 and len(samples) == expected,
+            "formal_matrix_shape": formal_shape,
             "all_processes_succeeded": all_success,
             "repeat_correctness_exact": repeat_exact,
             "peak_rss_within_budget": peak_ok,
             "performance_threshold_configured": threshold_configured,
             "32_token_threshold": threshold_ok,
             "passed": all((
+                formal_shape,
                 (expected > 0 and len(samples) == expected),
                 all_success,
                 repeat_exact,
