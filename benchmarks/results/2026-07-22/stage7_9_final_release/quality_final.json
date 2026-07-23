@@ -29,7 +29,7 @@
     "filesystem": "/"
   },
   "provenance": {
-    "source_tree_clean_at_experiment_start": false,
+    "source_tree_clean_at_experiment_start": true,
     "result_directory_writes_expected": true,
     "raw_results_directory": "/root/workspace/cache/final_release_raw",
     "physical_read_bytes_policy": "sampled via /proc/<pid>/io for model-cold; provider logical reads retained separately for all cells"

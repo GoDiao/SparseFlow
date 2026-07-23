@@ -29,7 +29,7 @@
     "filesystem": "/"
   },
   "provenance": {
-    "source_tree_clean_at_experiment_start": false,
+    "source_tree_clean_at_experiment_start": true,
     "result_directory_writes_expected": true,
     "raw_results_directory": "/root/workspace/cache/final_release_raw",
     "physical_read_bytes_policy": "sampled via /proc/<pid>/io for model-cold; provider logical reads retained separately for all cells"
@@ -40,7 +40,7 @@
     "model_identity": true,
     "container_identity": true,
     "closure_evidence_commit_consistent": true,
-    "closure_evidence_clean": false,
+    "closure_evidence_clean": true,
     "native_clean_build": true,
     "cli_smoke": true,
     "long_generation": true,
@@ -54,7 +54,7 @@
     "quality_streaming_complete": true,
     "prepare_resume": true
   },
-  "verification_passed": false,
+  "verification_passed": true,
   "physical_read_sampling_complete": true,
   "physical_read_sampling_status": "sampled-proc-pid-io",
   "artifacts": [

@@ -29,14 +29,14 @@
     "filesystem": "/"
   },
   "provenance": {
-    "source_tree_clean_at_experiment_start": false,
+    "source_tree_clean_at_experiment_start": true,
     "result_directory_writes_expected": true,
     "raw_results_directory": "/root/workspace/cache/final_release_raw",
     "physical_read_bytes_policy": "sampled via /proc/<pid>/io for model-cold; provider logical reads retained separately for all cells"
   },
   "kind": "sparseflow_stage7_9_native_clean_build",
   "evidence_file": "/root/workspace/cache/final_release_raw/native_build_evidence.json",
-  "cache": "/root/workspace/cache/closure-native-20260723-c886",
+  "cache": "/root/workspace/cache/closure-native-20260723-491f8b3",
   "compiled_from_empty_cache": true,
   "build_command": [
     "/usr/local/miniconda3/envs/py312/bin/python3.12",
@@ -56,12 +56,12 @@
     {
       "path": ".ninja_deps",
       "bytes": 320,
-      "sha256": "d790d9fea0b6699f816b1eb1d5151332ed375f67aaaa4db3655769b189b5b7cb"
+      "sha256": "7919c222b62bcf85c63dce1bcd13950eafa1071bbd2203fbca963234de957071"
     },
     {
       "path": ".ninja_log",
-      "bytes": 264,
-      "sha256": "42cdda7efd8247acb413bbd3a9a557d1a5511ef8adba84025688bf2c365e0bb9"
+      "bytes": 263,
+      "sha256": "44185a33352bb3135f1dcd1e5fd0554314ed70c88777c8eb991726e8a85543ee"
     },
     {
       "path": "build.ninja",
