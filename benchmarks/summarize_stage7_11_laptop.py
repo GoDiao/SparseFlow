@@ -31,7 +31,17 @@ def _cell_key(sample: dict[str, Any]) -> tuple[str, int]:
     return str(sample.get("prompt_id")), int(sample.get("max_new_tokens") or 0)
 
 
-def summarize(result: dict[str, Any], *, max_peak_rss_gib: float = 11.0, min_32_tok_per_second: float | None = None) -> dict[str, Any]:
+def summarize(
+    result: dict[str, Any],
+    *,
+    max_peak_rss_gib: float = 11.0,
+    min_32_tok_per_second: float | None = None,
+    max_8_token_wall_seconds: float | None = None,
+    max_16_token_wall_seconds: float | None = None,
+    max_32_token_wall_seconds: float | None = None,
+    max_prefill_p50_seconds: float | None = None,
+    max_decode_p50_seconds_per_token: float | None = None,
+) -> dict[str, Any]:
     samples = result.get("samples") or []
     protocol = result.get("protocol") or {}
     cells: dict[tuple[str, int], list[dict[str, Any]]] = {}
@@ -104,6 +114,59 @@ def summarize(result: dict[str, Any], *, max_peak_rss_gib: float = 11.0, min_32_
         and threshold_value is not None
         and threshold_value >= float(min_32_tok_per_second)
     )
+    performance_thresholds = {
+        8: max_8_token_wall_seconds,
+        16: max_16_token_wall_seconds,
+        32: max_32_token_wall_seconds,
+    }
+    latency_thresholds_configured = all(value is not None for value in performance_thresholds.values()) and all(
+        value is not None
+        for value in (max_prefill_p50_seconds, max_decode_p50_seconds_per_token)
+    )
+
+    def _max_cell_stat(token_count: int, field: str) -> float | None:
+        values = [
+            float(cell[field]["p50"])
+            for cell in summaries
+            if cell["max_new_tokens"] == token_count and cell[field].get("p50") is not None
+        ]
+        return max(values) if values else None
+
+    wall_p50_by_token = {
+        token_count: _max_cell_stat(token_count, "wall_seconds")
+        for token_count in (8, 16, 32)
+    }
+    prefill_p50 = max(
+        (
+            float(cell["ttft_seconds"]["p50"])
+            for cell in summaries
+            if cell["ttft_seconds"].get("p50") is not None
+        ),
+        default=None,
+    )
+    decode_p50 = max(
+        (
+            float(cell["decode_seconds_per_token"]["p50"])
+            for cell in summaries
+            if cell["decode_seconds_per_token"].get("p50") is not None
+        ),
+        default=None,
+    )
+    wall_thresholds_ok = latency_thresholds_configured and all(
+        wall_p50_by_token[token_count] is not None
+        and wall_p50_by_token[token_count] <= float(performance_thresholds[token_count])
+        for token_count in (8, 16, 32)
+    )
+    prefill_threshold_ok = (
+        latency_thresholds_configured
+        and prefill_p50 is not None
+        and prefill_p50 <= float(max_prefill_p50_seconds)
+    )
+    decode_threshold_ok = (
+        latency_thresholds_configured
+        and decode_p50 is not None
+        and decode_p50 <= float(max_decode_p50_seconds_per_token)
+    )
     return {
         "schema_version": 1,
         "kind": "sparseflow_stage7_11_laptop_cli_summary",
@@ -124,21 +187,35 @@ def summarize(result: dict[str, Any], *, max_peak_rss_gib: float = 11.0, min_32_
             "all_processes_succeeded": all_success,
             "repeat_correctness_exact": repeat_exact,
             "peak_rss_within_budget": peak_ok,
-            "performance_threshold_configured": threshold_configured,
+            "performance_threshold_configured": threshold_configured and latency_thresholds_configured,
             "32_token_threshold": threshold_ok,
+            "wall_time_thresholds": wall_thresholds_ok,
+            "prefill_p50_threshold": prefill_threshold_ok,
+            "decode_p50_threshold": decode_threshold_ok,
             "passed": all((
                 formal_shape,
                 (expected > 0 and len(samples) == expected),
                 all_success,
                 repeat_exact,
                 peak_ok,
-                threshold_configured,
+                threshold_configured and latency_thresholds_configured,
                 threshold_ok,
+                wall_thresholds_ok,
+                prefill_threshold_ok,
+                decode_threshold_ok,
             )),
         },
         "performance_threshold": {
             "max_peak_rss_gib": max_peak_rss_gib,
             "min_32_tok_per_second": min_32_tok_per_second,
+            "max_8_token_wall_seconds": max_8_token_wall_seconds,
+            "max_16_token_wall_seconds": max_16_token_wall_seconds,
+            "max_32_token_wall_seconds": max_32_token_wall_seconds,
+            "max_prefill_p50_seconds": max_prefill_p50_seconds,
+            "max_decode_p50_seconds_per_token": max_decode_p50_seconds_per_token,
+            "wall_p50_by_token": wall_p50_by_token,
+            "prefill_p50_seconds": prefill_p50,
+            "decode_p50_seconds_per_token": decode_p50,
             "observed_32_tok_per_second_p50": threshold_value,
         },
     }
@@ -150,12 +227,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--max-peak-rss-gib", type=float, default=11.0)
     parser.add_argument("--min-32-tok-per-second", type=float)
+    parser.add_argument("--max-8-token-wall-seconds", type=float)
+    parser.add_argument("--max-16-token-wall-seconds", type=float)
+    parser.add_argument("--max-32-token-wall-seconds", type=float)
+    parser.add_argument("--max-prefill-p50-seconds", type=float)
+    parser.add_argument("--max-decode-p50-seconds-per-token", type=float)
     args = parser.parse_args(argv)
     result = json.loads(Path(args.input).read_text(encoding="utf-8"))
     summary = summarize(
         result,
         max_peak_rss_gib=args.max_peak_rss_gib,
         min_32_tok_per_second=args.min_32_tok_per_second,
+        max_8_token_wall_seconds=args.max_8_token_wall_seconds,
+        max_16_token_wall_seconds=args.max_16_token_wall_seconds,
+        max_32_token_wall_seconds=args.max_32_token_wall_seconds,
+        max_prefill_p50_seconds=args.max_prefill_p50_seconds,
+        max_decode_p50_seconds_per_token=args.max_decode_p50_seconds_per_token,
     )
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

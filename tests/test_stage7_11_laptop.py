@@ -65,6 +65,48 @@ class Stage711LaptopTest(unittest.TestCase):
         self.assertFalse(summary["gates"]["formal_matrix_shape"])
         self.assertFalse(summary["gates"]["performance_threshold_configured"])
 
+    def test_summary_enforces_all_frozen_performance_thresholds(self):
+        base = compact_result(
+            fake_result(),
+            prompt_id="en-explain",
+            category="en",
+            repeat=1,
+            max_new_tokens=8,
+            cache_bytes=1024,
+            context_tokens=2048,
+            wall_seconds=61.0,
+        )
+        repeat = dict(base, repeat=2)
+        samples = [dict(base, exit_code=0), dict(repeat, exit_code=0)]
+        for token_count, wall_seconds in ((16, 80.0), (32, 120.0)):
+            left = compact_result(
+                fake_result(),
+                prompt_id="en-explain",
+                category="en",
+                repeat=1,
+                max_new_tokens=token_count,
+                cache_bytes=1024,
+                context_tokens=2048,
+                wall_seconds=wall_seconds,
+            )
+            samples.extend([dict(left, exit_code=0), dict(left, repeat=2, exit_code=0)])
+        result = {
+            "kind": "sparseflow_stage7_11_laptop_cli",
+            "protocol": {"prompt_count": 1, "repeats": 2, "token_counts": [8, 16, 32]},
+            "samples": samples,
+        }
+        summary = summarize(
+            result,
+            min_32_tok_per_second=1 / 3,
+            max_8_token_wall_seconds=60.0,
+            max_16_token_wall_seconds=90.0,
+            max_32_token_wall_seconds=140.0,
+            max_prefill_p50_seconds=35.0,
+            max_decode_p50_seconds_per_token=3.0,
+        )
+        self.assertFalse(summary["gates"]["passed"])
+        self.assertFalse(summary["gates"]["wall_time_thresholds"])
+
     def test_compact_result_removes_large_route_payload(self):
         result = compact_result(
             fake_result(),
